@@ -6,7 +6,7 @@
 		"@token-ring/registry": "0.1.0",
 		"@token-ring/eslint-config": "0.0.0"
 	},
-	"license": "UNLICENSED",
+
 	"main": "index.js",
 	"type": "module",
 	"scripts": {
