@@ -3,8 +3,7 @@
 	"description": "Abstract database resources and interfaces",
 	"version": "0.1.0",
 	"dependencies": {
-		"@token-ring/registry": "0.1.0",
-		"@token-ring/eslint-config": "0.0.0"
+		"@token-ring/registry": "0.1.0"
 	},
 
 	"main": "index.js",
