@@ -1,4 +1,4 @@
-import {Registry, Resource } from "@token-ring/registry";
+import {Registry, Resource} from "@token-ring/registry";
 
 interface DatabaseResourceConstructorProps {
   host: string;
@@ -42,11 +42,11 @@ export default class DatabaseResource extends Resource {
     },
   };
 
-  private host: string;
-  private port?: number;
-  private user: string;
-  private password: string;
-  private databaseName?: string;
+  private readonly host: string;
+  private readonly port?: number;
+  private readonly user: string;
+  private readonly password: string;
+  private readonly databaseName?: string;
 
   constructor({ host, port, user, password, databaseName }: DatabaseResourceConstructorProps) {
     super();

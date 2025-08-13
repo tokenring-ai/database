@@ -1,4 +1,4 @@
-import { z } from "zod";
+import {z} from "zod";
 import DatabaseResource from "../DatabaseResource.js";
 import {Registry} from "@token-ring/registry";
 

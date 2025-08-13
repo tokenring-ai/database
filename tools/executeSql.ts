@@ -1,5 +1,5 @@
 import DatabaseResource from "../DatabaseResource.js";
-import { z } from "zod";
+import {z} from "zod";
 import {Registry} from "@token-ring/registry";
 
 interface ExecuteParams {
