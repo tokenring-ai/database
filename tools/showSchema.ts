@@ -2,6 +2,8 @@ import {Registry} from "@token-ring/registry";
 import {z} from "zod";
 import DatabaseResource from "../DatabaseResource.js";
 
+export const name = "database/showSchema";
+
 interface ShowSchemaParams {
   databaseName?: string;
 }
@@ -9,20 +11,19 @@ interface ShowSchemaParams {
 export async function execute(
   {databaseName}: ShowSchemaParams,
   registry: Registry
-): Promise<Record<string, any> | string | { error: string }> {
+): Promise<Record<string, any> | string> {
   const resource = registry.resources.getFirstResourceByType(DatabaseResource);
   if (!resource) {
-    return {error: "Configuration error: DatabaseResource not found"};
+    throw new Error(`[${name}] Configuration error: DatabaseResource not found`);
   }
   if (!databaseName) {
-    return {error: "databaseName is required"};
+    throw new Error(`[${name}] databaseName is required`);
   }
 
   try {
     return await resource.showSchema(databaseName);
   } catch (error: any) {
-    console.error("Error showing schema via resource:", error);
-    return {error: `Failed to show schema via resource: ${error.message}`};
+    throw new Error(`[${name}] Failed to show schema via resource: ${error.message}`);
   }
 }
 

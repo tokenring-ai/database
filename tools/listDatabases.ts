@@ -1,18 +1,22 @@
-import {Registry} from "@token-ring/registry";
-import {z} from "zod";
+import { Registry } from "@token-ring/registry";
+import { z } from "zod";
 import DatabaseResource from "../DatabaseResource.js";
 
-export async function execute({}, registry: Registry): Promise<string[] | { error: string }> {
+export const name = "database/listDatabases";
+
+export async function execute(
+  {},
+  registry: Registry
+): Promise<string[]> {
   const resource = registry.resources.getFirstResourceByType(DatabaseResource);
   if (!resource) {
-    return {error: "Configuration error: DatabaseResource not found"};
+    throw new Error(`[${name}] Configuration error: DatabaseResource not found`);
   }
 
   try {
     return await resource.listDatabases();
   } catch (error: any) {
-    console.error("Error listing databases via resource:", error);
-    return {error: `Failed to list databases via resource: ${error.message}`};
+    throw new Error(`[${name}] Failed to list databases via resource: ${error.message}`);
   }
 }
 

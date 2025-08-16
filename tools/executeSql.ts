@@ -1,6 +1,9 @@
-import {Registry} from "@token-ring/registry";
-import {z} from "zod";
+import { Registry } from "@token-ring/registry";
+import { z } from "zod";
 import DatabaseResource from "../DatabaseResource.js";
+
+// Export the tool name in the required format
+export const name = "database/executeSql";
 
 interface ExecuteParams {
   databaseName?: string;
@@ -9,15 +12,16 @@ interface ExecuteParams {
 }
 
 export async function execute(
-  {databaseName, sqlQuery, queryParams}: ExecuteParams,
+  { databaseName, sqlQuery, queryParams }: ExecuteParams,
   registry: Registry
 ): Promise<any> {
   const resource = registry.resources.getFirstResourceByType(DatabaseResource);
   if (!resource) {
-    return {error: "Configuration error: DatabaseResource not found"};
+    // Throw an error instead of returning an error object
+    throw new Error(`[${name}] Configuration error: DatabaseResource not found`);
   }
   if (!sqlQuery) {
-    return {error: "sqlQuery is required"};
+    throw new Error(`[${name}] sqlQuery is required`);
   }
   // databaseName for connecting to a specific DB is now handled by the resource's executeSql method if needed,
   // or by the SQL query itself (e.g. USE some_db;).
@@ -37,10 +41,8 @@ export async function execute(
 
     return await resource.executeSql(sqlQuery, executionParams);
   } catch (error: any) {
-    console.error("Error executing SQL query via resource:", error);
-    return {
-      error: `Failed to execute SQL query via resource: ${error.message}`,
-    };
+    // Throw a formatted error instead of logging and returning an error object
+    throw new Error(`[${name}] Failed to execute SQL query via resource: ${error.message}`);
   }
 }
 
@@ -52,7 +54,7 @@ export const parameters = z.object({
     .string()
     .optional()
     .describe(
-      "Optional: The name of the database to target. May also be specified in the SQL query.",
+      "Optional: The name of the database to target. May also be specified in the SQL query."
     ),
   sqlQuery: z.string().describe("The SQL query to execute."),
   queryParams: z
@@ -60,6 +62,6 @@ export const parameters = z.object({
     .passthrough()
     .optional()
     .describe(
-      "Optional: Parameters for the SQL query, for prepared statements or specific connection needs.",
+      "Optional: Parameters for the SQL query, for prepared statements or specific connection needs."
     ),
 });
