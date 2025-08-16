@@ -1,4 +1,4 @@
-export { default as DatabaseResource } from "./DatabaseResource.js";
+export {default as DatabaseResource} from "./DatabaseResource.js";
 
 export const name = "@token-ring/database";
 export const description = "Abstract database resource definitions.";

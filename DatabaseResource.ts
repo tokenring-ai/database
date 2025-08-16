@@ -48,7 +48,7 @@ export default class DatabaseResource extends Resource {
   private readonly password: string;
   private readonly databaseName?: string;
 
-  constructor({ host, port, user, password, databaseName }: DatabaseResourceConstructorProps) {
+  constructor({host, port, user, password, databaseName}: DatabaseResourceConstructorProps) {
     super();
     if (!host) {
       throw new Error("DatabaseResource requires a host.");

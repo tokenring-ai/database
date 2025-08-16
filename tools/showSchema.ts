@@ -1,28 +1,28 @@
-import DatabaseResource from "../DatabaseResource.js";
-import {z} from "zod";
 import {Registry} from "@token-ring/registry";
+import {z} from "zod";
+import DatabaseResource from "../DatabaseResource.js";
 
 interface ShowSchemaParams {
   databaseName?: string;
 }
 
 export async function execute(
-  { databaseName }: ShowSchemaParams, 
+  {databaseName}: ShowSchemaParams,
   registry: Registry
 ): Promise<Record<string, any> | string | { error: string }> {
   const resource = registry.resources.getFirstResourceByType(DatabaseResource);
   if (!resource) {
-      return { error: "Configuration error: DatabaseResource not found" };
+    return {error: "Configuration error: DatabaseResource not found"};
   }
   if (!databaseName) {
-    return { error: "databaseName is required" };
+    return {error: "databaseName is required"};
   }
 
   try {
     return await resource.showSchema(databaseName);
   } catch (error: any) {
     console.error("Error showing schema via resource:", error);
-    return { error: `Failed to show schema via resource: ${error.message}` };
+    return {error: `Failed to show schema via resource: ${error.message}`};
   }
 }
 

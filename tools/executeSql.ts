@@ -1,6 +1,6 @@
-import DatabaseResource from "../DatabaseResource.js";
-import {z} from "zod";
 import {Registry} from "@token-ring/registry";
+import {z} from "zod";
+import DatabaseResource from "../DatabaseResource.js";
 
 interface ExecuteParams {
   databaseName?: string;
@@ -9,15 +9,15 @@ interface ExecuteParams {
 }
 
 export async function execute(
-  { databaseName, sqlQuery, queryParams }: ExecuteParams,
+  {databaseName, sqlQuery, queryParams}: ExecuteParams,
   registry: Registry
 ): Promise<any> {
   const resource = registry.resources.getFirstResourceByType(DatabaseResource);
   if (!resource) {
-      return { error: "Configuration error: DatabaseResource not found" };
+    return {error: "Configuration error: DatabaseResource not found"};
   }
   if (!sqlQuery) {
-    return { error: "sqlQuery is required" };
+    return {error: "sqlQuery is required"};
   }
   // databaseName for connecting to a specific DB is now handled by the resource's executeSql method if needed,
   // or by the SQL query itself (e.g. USE some_db;).
