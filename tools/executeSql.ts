@@ -8,41 +8,32 @@ export const name = "database/executeSql";
 interface ExecuteParams {
   databaseName?: string;
   sqlQuery?: string;
-  queryParams?: Record<string, any>;
+  queryParams?: Record<string, unknown>;
 }
 
 export async function execute(
   { databaseName, sqlQuery, queryParams }: ExecuteParams,
   registry: Registry
-): Promise<any> {
+): Promise<string|object> {
   const resource = registry.resources.getFirstResourceByType(DatabaseResource);
   if (!resource) {
-    // Throw an error instead of returning an error object
     throw new Error(`[${name}] Configuration error: DatabaseResource not found`);
   }
   if (!sqlQuery) {
     throw new Error(`[${name}] sqlQuery is required`);
   }
-  // databaseName for connecting to a specific DB is now handled by the resource's executeSql method if needed,
-  // or by the SQL query itself (e.g. USE some_db;).
-  // The `params` object in `resource.executeSql(sqlQuery, params)` can be used for more advanced cases,
-  // like passing values for prepared statements or specifying a database for the connection.
 
   try {
-    // Construct the params object for the resource's executeSql method
-    const executionParams: Record<string, any> = {
-      // If databaseName is provided by the tool's arguments, pass it along.
-      // This allows the resource's executeSql method to decide how to use it (e.g., connect to this DB).
-      databaseName: databaseName,
-      // queryParams could be an object containing values for prepared statements, e.g., { values: [...] }
-      // Adjust based on how `resource.executeSql` is designed to handle them.
+    const executionParams: Record<string, unknown> = {
+      databaseName,
       ...(queryParams && typeof queryParams === "object" ? queryParams : {}),
     };
-
     return await resource.executeSql(sqlQuery, executionParams);
-  } catch (error: any) {
-    // Throw a formatted error instead of logging and returning an error object
-    throw new Error(`[${name}] Failed to execute SQL query via resource: ${error.message}`);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw new Error(`[${name}] Failed to execute SQL query via resource: ${error.message}`);
+    }
+    throw new Error(`[${name}] Failed to execute SQL query via resource: ${String(error)}`);
   }
 }
 

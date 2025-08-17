@@ -13,11 +13,8 @@ export async function execute(
     throw new Error(`[${name}] Configuration error: DatabaseResource not found`);
   }
 
-  try {
-    return await resource.listDatabases();
-  } catch (error: any) {
-    throw new Error(`[${name}] Failed to list databases via resource: ${error.message}`);
-  }
+
+  return await resource.listDatabases();
 }
 
 export const description =
