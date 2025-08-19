@@ -30,7 +30,7 @@ export async function execute(
 export const description =
   "Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database, using the DatabaseResource.";
 
-export const parameters = z.object({
+export const inputSchema = z.object({
   databaseName: z
     .string()
     .describe("The name of the database for which to show the schema."),

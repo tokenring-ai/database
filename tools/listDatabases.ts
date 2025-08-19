@@ -1,5 +1,5 @@
-import { Registry } from "@token-ring/registry";
-import { z } from "zod";
+import {Registry} from "@token-ring/registry";
+import {z} from "zod";
 import DatabaseResource from "../DatabaseResource.js";
 
 export const name = "database/listDatabases";
@@ -19,4 +19,4 @@ export async function execute(
 
 export const description =
   "Lists all databases accessible by the configured database connection, using the DatabaseResource.";
-export const parameters = z.object({});
+export const inputSchema = z.object({});

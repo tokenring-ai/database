@@ -1,4 +1,4 @@
-import {Registry, Resource} from "@token-ring/registry";
+import {Resource} from "@token-ring/registry";
 
 interface DatabaseResourceConstructorProps {
   host: string;
@@ -69,10 +69,6 @@ export default class DatabaseResource extends Resource {
 
   /**
    * Executes an SQL query.
-   * @param sqlQuery - The SQL query string.
-   * @param params - Optional parameters for the query.
-   * @returns The query result.
-   * @throws {Error} If the method is not implemented by the subclass.
    */
   async executeSql(sqlQuery: string, params?: Record<string, any>): Promise<any> {
     throw new Error("Method 'executeSql()' must be implemented.");
@@ -80,8 +76,6 @@ export default class DatabaseResource extends Resource {
 
   /**
    * Lists all databases accessible by the connection.
-   * @returns A list of database names.
-   * @throws {Error} If the method is not implemented by the subclass.
    */
   async listDatabases(): Promise<string[]> {
     throw new Error("Method 'listDatabases()' must be implemented.");
@@ -89,9 +83,6 @@ export default class DatabaseResource extends Resource {
 
   /**
    * Shows the schema for all tables in a given database.
-   * @param databaseName - The name of the database.
-   * @returns The schema definition for all tables.
-   * @throws {Error} If the method is not implemented by the subclass.
    */
   async showSchema(databaseName: string): Promise<Record<string, any> | string> {
     throw new Error("Method 'showSchema(databaseName)' must be implemented.");
@@ -115,20 +106,5 @@ export default class DatabaseResource extends Resource {
 
   getDatabaseName(): string | undefined {
     return this.databaseName;
-  }
-
-  async start(registry: Registry): Promise<void> {
-    console.log(`${this.constructor.name} starting`);
-  }
-
-  async stop(registry: Registry): Promise<void> {
-    console.log(`${this.constructor.name} stopping`);
-  }
-
-  async status(registry: Registry): Promise<DatabaseResourceStatus> {
-    return {
-      active: true,
-      service: this.constructor.name,
-    };
   }
 }

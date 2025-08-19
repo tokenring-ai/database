@@ -1,5 +1,5 @@
-import { Registry } from "@token-ring/registry";
-import { z } from "zod";
+import {Registry} from "@token-ring/registry";
+import {z} from "zod";
 import DatabaseResource from "../DatabaseResource.js";
 
 // Export the tool name in the required format
@@ -12,9 +12,9 @@ interface ExecuteParams {
 }
 
 export async function execute(
-  { databaseName, sqlQuery, queryParams }: ExecuteParams,
+  {databaseName, sqlQuery, queryParams}: ExecuteParams,
   registry: Registry
-): Promise<string|object> {
+): Promise<string | object> {
   const resource = registry.resources.getFirstResourceByType(DatabaseResource);
   if (!resource) {
     throw new Error(`[${name}] Configuration error: DatabaseResource not found`);
@@ -40,7 +40,7 @@ export async function execute(
 export const description =
   "Executes an arbitrary SQL query on a database using the DatabaseResource. WARNING: Use with extreme caution as this can modify or delete data.";
 
-export const parameters = z.object({
+export const inputSchema = z.object({
   databaseName: z
     .string()
     .optional()
@@ -50,7 +50,6 @@ export const parameters = z.object({
   sqlQuery: z.string().describe("The SQL query to execute."),
   queryParams: z
     .object({})
-    .passthrough()
     .optional()
     .describe(
       "Optional: Parameters for the SQL query, for prepared statements or specific connection needs."

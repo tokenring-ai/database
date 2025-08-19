@@ -1,14 +1,13 @@
 {
-	"name": "@token-ring/database",
-	"description": "Abstract database resources and interfaces",
-	"version": "0.1.0",
-	"dependencies": {
-		"@token-ring/registry": "0.1.0"
-	},
-
-	"main": "index.ts",
-	"type": "module",
-	"scripts": {
-		"eslint": "eslint --fix ./"
-	}
+ "name": "@token-ring/database",
+ "description": "Abstract database resources and interfaces",
+ "version": "0.1.0",
+ "dependencies": {
+  "@token-ring/registry": "0.1.0"
+ },
+ "main": "index.ts",
+ "type": "module",
+ "scripts": {
+  "eslint": "eslint --fix ./"
+ }
 }
