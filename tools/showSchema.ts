@@ -1,6 +1,7 @@
 import {Registry} from "@token-ring/registry";
 import {z} from "zod";
 import DatabaseResource from "../DatabaseResource.js";
+import DatabaseService from "../DatabaseService.js";
 
 export const name = "database/showSchema";
 
@@ -12,23 +13,17 @@ export async function execute(
   {databaseName}: ShowSchemaParams,
   registry: Registry
 ): Promise<Record<string, any> | string> {
-  const resource = registry.resources.getFirstResourceByType(DatabaseResource);
-  if (!resource) {
-    throw new Error(`[${name}] Configuration error: DatabaseResource not found`);
-  }
+  const databaseService = registry.requireFirstServiceByType(DatabaseService);
   if (!databaseName) {
     throw new Error(`[${name}] databaseName is required`);
   }
 
-  try {
-    return await resource.showSchema(databaseName);
-  } catch (error: any) {
-    throw new Error(`[${name}] Failed to show schema via resource: ${error.message}`);
-  }
+  const databaseResource = databaseService.getResourceByName(databaseName);
+  return databaseResource.showSchema();
 }
 
 export const description =
-  "Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database, using the DatabaseResource.";
+  "Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database.";
 
 export const inputSchema = z.object({
   databaseName: z

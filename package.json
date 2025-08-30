@@ -9,5 +9,9 @@
  "type": "module",
  "scripts": {
   "eslint": "eslint --fix ./"
+ },
+ "exports": {
+  ".": "./index.ts",
+  "./*": "./*.ts"
  }
 }
