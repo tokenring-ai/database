@@ -1,6 +1,12 @@
+import {TokenRingPackage} from "@tokenring-ai/agent";
+import packageJSON from './package.json' with {type: 'json'};
+import * as tools from "./tools.ts";
+
 export {default as DatabaseResource} from "./DatabaseResource.js";
 
-export const name = "@token-ring/database";
-export const description = "Abstract database resource definitions.";
-export const version = "0.1.0";
-export * as tools from "./tools.js";
+export const packageInfo: TokenRingPackage = {
+  name: packageJSON.name,
+  version: packageJSON.version,
+  description: packageJSON.description,
+  tools
+};

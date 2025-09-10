@@ -1,4 +1,4 @@
-# @token-ring/database
+# @tokenring-ai/database
 
 Abstract database resources and tools for the Token Ring ecosystem. This package defines a common interface (
 DatabaseResource) for database connectivity and ships with small, registry-driven tools for executing SQL, listing
@@ -25,14 +25,14 @@ then discover that resource and delegate operations to it.
 This package is part of the Token Ring monorepo. In a workspace-aware setup, you can reference it directly:
 
 ```
-npm i @token-ring/database
+npm i @tokenring-ai/database
 # or
-pnpm add @token-ring/database
+pnpm add @tokenring-ai/database
 # or
-bun add @token-ring/database
+bun add @tokenring-ai/database
 ```
 
-Ensure that its peer dependency @token-ring/registry is also available in your project.
+Ensure that its peer dependency @tokenring-ai/registry is also available in your project.
 
 ## Overview
 
@@ -43,7 +43,7 @@ The package exports:
 - name, description, version: simple package metadata.
 
 ```
-import { DatabaseResource, tools } from "@token-ring/database";
+import { DatabaseResource, tools } from "@tokenring-ai/database";
 ```
 
 ## Implementing a concrete DatabaseResource
@@ -54,7 +54,7 @@ forward the required properties to super and store any driver-specific handles a
 Example (pseudo-implementation):
 
 ```ts
-import DatabaseResource from "@token-ring/database/DatabaseResource";
+import DatabaseResource from "@tokenring-ai/database/DatabaseResource";
 
 export class PostgresDatabaseResource extends DatabaseResource {
   private client: any;
@@ -98,8 +98,8 @@ Constructor properties (also described in the class as static constructorPropert
 The tools operate via a Registry and will look up the first registered DatabaseResource.
 
 ```ts
-import {ServiceRegistry} from "@token-ring/registry";
-import {tools} from "@token-ring/database";
+import {ServiceRegistry} from "@tokenring-ai/registry";
+import {tools} from "@tokenring-ai/database";
 import {PostgresDatabaseResource} from "./PostgresDatabaseResource";
 
 const registry = new ServiceRegistry();

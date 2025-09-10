@@ -1,6 +1,5 @@
-import {Registry} from "@token-ring/registry";
+import Agent from "@tokenring-ai/agent/Agent";
 import {z} from "zod";
-import DatabaseResource from "../DatabaseResource.js";
 import DatabaseService from "../DatabaseService.js";
 
 export const name = "database/showSchema";
@@ -11,9 +10,9 @@ interface ShowSchemaParams {
 
 export async function execute(
   {databaseName}: ShowSchemaParams,
-  registry: Registry
+  agent: Agent
 ): Promise<Record<string, any> | string> {
-  const databaseService = registry.requireFirstServiceByType(DatabaseService);
+  const databaseService = agent.requireFirstServiceByType(DatabaseService);
   if (!databaseName) {
     throw new Error(`[${name}] databaseName is required`);
   }

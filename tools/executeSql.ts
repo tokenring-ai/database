@@ -1,6 +1,5 @@
-import {Registry} from "@token-ring/registry";
+import Agent from "@tokenring-ai/agent/Agent";
 import {z} from "zod";
-import DatabaseResource from "../DatabaseResource.js";
 import DatabaseService from "../DatabaseService.js";
 
 // Export the tool name in the required format
@@ -13,9 +12,9 @@ interface ExecuteParams {
 
 export async function execute(
   {databaseName, sqlQuery}: ExecuteParams,
-  registry: Registry
+  agent: Agent
 ): Promise<string | object> {
-  const databaseService = registry.requireFirstServiceByType(DatabaseService);
+  const databaseService = agent.requireFirstServiceByType(DatabaseService);
   if (!databaseName) {
     throw new Error(`[${name}] databaseName is required`);
   }
@@ -27,7 +26,7 @@ export async function execute(
   const databaseResource = databaseService.getResourceByName(databaseName);
 
   if (!sqlQuery.trim().startsWith("SELECT")) {
-    if (! databaseResource.allowWrites) {
+    if (!databaseResource.allowWrites) {
       throw new Error("Database does not allow write access.");
     }
   }

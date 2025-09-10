@@ -1,8 +1,10 @@
-import {Registry, Service} from "@token-ring/registry";
-import {MemoryItemMessage} from "@token-ring/registry/Service";
+import {Agent} from "@tokenring-ai/agent";
+import {MemoryItemMessage, TokenRingService} from "@tokenring-ai/agent/types";
 import DatabaseResource from "./DatabaseResource.ts";
 
-export default class DatabaseService extends Service {
+export default class DatabaseService implements TokenRingService {
+  name = "DatabaseService";
+  description = "Database service";
   private resources: Record<string, DatabaseResource> = {};
   private activeResources: Set<string> = new Set();
 
@@ -24,12 +26,23 @@ export default class DatabaseService extends Service {
   }
 
   getResourceByName(name: string): DatabaseResource {
-    if (! this.activeResources.has(name)) throw new Error(`Resource ${name} not enabled`);
+    if (!this.activeResources.has(name)) throw new Error(`Resource ${name} not enabled`);
     return this.resources[name];
   }
 
   getAvailableResources(): string[] {
     return Object.keys(this.resources);
+  }
+
+  /**
+   * Asynchronously yields memories from file tree and whole files
+   */
+  async* getMemories(agent: Agent): AsyncGenerator<MemoryItemMessage> {
+    yield {
+      role: "user",
+      content: "These are the databases available for the database tools:\n" +
+        Object.keys(this.resources).join(", "),
+    }
   }
 
   private getActiveResources(): Record<string, DatabaseResource> {
@@ -38,16 +51,5 @@ export default class DatabaseService extends Service {
       ret[name] = this.resources[name];
     }
     return ret;
-  }
-
-  /**
-   * Asynchronously yields memories from file tree and whole files
-   */
-  async* getMemories(registry: Registry): AsyncGenerator<MemoryItemMessage> {
-    yield {
-      role: "user",
-      content: "These are the databases available for the database tools:\n" +
-               Object.keys(this.resources).join(", "),
-    }
   }
 }

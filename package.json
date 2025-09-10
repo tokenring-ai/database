@@ -1,9 +1,9 @@
 {
- "name": "@token-ring/database",
+ "name": "@tokenring-ai/database",
  "description": "Abstract database resources and interfaces",
  "version": "0.1.0",
  "dependencies": {
-  "@token-ring/registry": "0.1.0"
+  "@tokenring-ai/agent": "0.1.0"
  },
  "main": "index.ts",
  "type": "module",
