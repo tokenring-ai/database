@@ -14,7 +14,7 @@ export async function execute(
   {databaseName, sqlQuery}: ExecuteParams,
   agent: Agent
 ): Promise<string | object> {
-  const databaseService = agent.requireFirstServiceByType(DatabaseService);
+  const databaseService = agent.requireServiceByType(DatabaseService);
   if (!databaseName) {
     throw new Error(`[${name}] databaseName is required`);
   }
@@ -23,11 +23,19 @@ export async function execute(
   }
 
 
-  const databaseResource = databaseService.getResourceByName(databaseName);
+  const databaseResource = databaseService.getDatabaseByName(databaseName);
+  if (!databaseResource) {
+    throw new Error(`[${name}] Database ${databaseName} not found`);
+  }
 
   if (!sqlQuery.trim().startsWith("SELECT")) {
-    if (!databaseResource.allowWrites) {
-      throw new Error("Database does not allow write access.");
+    const approved = await agent.askHuman({
+      type: "askForConfirmation",
+      message: `Execute SQL write operation on database '${databaseName}'?\n\nQuery: ${sqlQuery}`,
+    });
+
+    if (!approved) {
+      throw new Error("User did not approve the SQL query that was provided.");
     }
   }
   return databaseResource.executeSql(sqlQuery);

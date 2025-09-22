@@ -12,12 +12,15 @@ export async function execute(
   {databaseName}: ShowSchemaParams,
   agent: Agent
 ): Promise<Record<string, any> | string> {
-  const databaseService = agent.requireFirstServiceByType(DatabaseService);
+  const databaseService = agent.requireServiceByType(DatabaseService);
   if (!databaseName) {
     throw new Error(`[${name}] databaseName is required`);
   }
 
-  const databaseResource = databaseService.getResourceByName(databaseName);
+  const databaseResource = databaseService.getDatabaseByName(databaseName);
+  if (!databaseResource) {
+    throw new Error(`[${name}] Database ${databaseName} not found`);
+  }
   return databaseResource.showSchema();
 }
 
