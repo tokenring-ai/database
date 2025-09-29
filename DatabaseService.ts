@@ -1,12 +1,12 @@
 import {Agent} from "@tokenring-ai/agent";
 import {ContextItem, TokenRingService} from "@tokenring-ai/agent/types";
 import KeyedRegistry from "@tokenring-ai/utility/KeyedRegistry";
-import DatabaseResource from "./DatabaseResource.ts";
+import DatabaseProvider from "./DatabaseProvider.ts";
 
 export default class DatabaseService implements TokenRingService {
   name = "DatabaseService";
   description = "Database service";
-  private databases = new KeyedRegistry<DatabaseResource>();
+  private databases = new KeyedRegistry<DatabaseProvider>();
 
   registerDatabase = this.databases.register;
   getDatabaseByName = this.databases.getItemByName;

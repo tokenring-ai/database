@@ -1,4 +1,4 @@
-export interface DatabaseResourceOptions {
+export interface DatabaseProviderOptions {
   allowWrites?: boolean;
 }
 
@@ -7,10 +7,10 @@ export interface ExecuteSqlResult {
   fields: string[];
 }
 
-export default class DatabaseResource {
+export default class DatabaseProvider {
   allowWrites: boolean;
 
-  constructor({allowWrites}: DatabaseResourceOptions) {
+  constructor({allowWrites}: DatabaseProviderOptions) {
     this.allowWrites = allowWrites ?? false;
   }
 
