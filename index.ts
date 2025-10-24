@@ -1,9 +1,7 @@
 import {AgentTeam, TokenRingPackage} from "@tokenring-ai/agent";
-import {IterableService} from "@tokenring-ai/iterables";
 import {z} from "zod";
 import DatabaseService from "./DatabaseService.ts";
 import packageJSON from './package.json' with {type: 'json'};
-import SqlIterableProvider from "./SqlIterableProvider.ts";
 import * as tools from "./tools.ts";
 
 export const DatabaseConfigSchema = z.object({
@@ -19,9 +17,6 @@ export default {
     if (config) {
       agentTeam.addTools(packageJSON.name, tools);
       agentTeam.addServices(new DatabaseService());
-      agentTeam.services.waitForItemByType(IterableService).then((iterableService: IterableService) => {
-        iterableService.registerProvider("sql", new SqlIterableProvider());
-      });
     }
   }
 } as TokenRingPackage;
