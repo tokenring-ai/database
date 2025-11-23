@@ -1,6 +1,6 @@
 import {Agent} from "@tokenring-ai/agent";
 import {ContextItem, TokenRingService} from "@tokenring-ai/agent/types";
-import KeyedRegistry from "@tokenring-ai/utility/KeyedRegistry";
+import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import DatabaseProvider from "./DatabaseProvider.ts";
 
 export default class DatabaseService implements TokenRingService {
