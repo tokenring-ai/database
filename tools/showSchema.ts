@@ -1,15 +1,16 @@
 import Agent from "@tokenring-ai/agent/Agent";
+import {TokenRingToolDefinition} from "@tokenring-ai/chat/types";
 import {z} from "zod";
 import DatabaseService from "../DatabaseService.js";
 
-export const name = "database/showSchema";
+const name = "database/showSchema";
 
 interface ShowSchemaParams {
   databaseName?: string;
 }
 
-export async function execute(
-  {databaseName}: ShowSchemaParams,
+async function execute(
+  {databaseName}: z.infer<typeof inputSchema>,
   agent: Agent
 ): Promise<Record<string, any> | string> {
   const databaseService = agent.requireServiceByType(DatabaseService);
@@ -24,11 +25,15 @@ export async function execute(
   return databaseResource.showSchema();
 }
 
-export const description =
+const description =
   "Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database.";
 
-export const inputSchema = z.object({
+const inputSchema = z.object({
   databaseName: z
     .string()
     .describe("The name of the database for which to show the schema."),
 });
+
+export default {
+  name, description, inputSchema, execute,
+} as TokenRingToolDefinition<typeof inputSchema>;

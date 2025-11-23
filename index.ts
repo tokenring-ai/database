@@ -1,5 +1,6 @@
-import {AgentTeam, TokenRingPackage} from "@tokenring-ai/agent";
+import TokenRingApp from "@tokenring-ai/app";
 import {ChatService} from "@tokenring-ai/chat";
+import {TokenRingPlugin} from "@tokenring-ai/app";
 import {z} from "zod";
 import DatabaseService from "./DatabaseService.ts";
 import packageJSON from './package.json' with {type: 'json'};
@@ -13,16 +14,16 @@ export default {
   name: packageJSON.name,
   version: packageJSON.version,
   description: packageJSON.description,
-  install(agentTeam: AgentTeam) {
-    const config = agentTeam.getConfigSlice('database', DatabaseConfigSchema);
+  install(app: TokenRingApp) {
+    const config = app.getConfigSlice('database', DatabaseConfigSchema);
     if (config) {
-      agentTeam.waitForService(ChatService, chatService =>
+      app.waitForService(ChatService, chatService =>
         chatService.addTools(packageJSON.name, tools)
       );
-      agentTeam.addServices(new DatabaseService());
+      app.addServices(new DatabaseService());
     }
   }
-} as TokenRingPackage;
+} as TokenRingPlugin;
 
 export {default as DatabaseProvider} from "./DatabaseProvider.js";
 export {default as DatabaseService} from "./DatabaseService.ts";

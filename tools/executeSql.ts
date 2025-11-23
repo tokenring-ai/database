@@ -1,17 +1,13 @@
 import Agent from "@tokenring-ai/agent/Agent";
+import {TokenRingToolDefinition} from "@tokenring-ai/chat/types";
 import {z} from "zod";
 import DatabaseService from "../DatabaseService.js";
 
 // Export the tool name in the required format
-export const name = "database/executeSql";
+const name = "database/executeSql";
 
-interface ExecuteParams {
-  databaseName?: string;
-  sqlQuery?: string;
-}
-
-export async function execute(
-  {databaseName, sqlQuery}: ExecuteParams,
+async function execute(
+  {databaseName, sqlQuery}: z.infer<typeof inputSchema>,
   agent: Agent
 ): Promise<string | object> {
   const databaseService = agent.requireServiceByType(DatabaseService);
@@ -41,10 +37,10 @@ export async function execute(
   return databaseResource.executeSql(sqlQuery);
 }
 
-export const description =
+const description =
   "Executes an arbitrary SQL query on a database using the DatabaseResource. WARNING: Use with extreme caution as this can modify or delete data.";
 
-export const inputSchema = z.object({
+const inputSchema = z.object({
   databaseName: z
     .string()
     .optional()
@@ -53,3 +49,7 @@ export const inputSchema = z.object({
     ),
   sqlQuery: z.string().describe("The SQL query to execute."),
 });
+
+export default {
+  name, description, inputSchema, execute,
+} as TokenRingToolDefinition<typeof inputSchema>;

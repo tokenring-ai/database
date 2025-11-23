@@ -1,5 +1,6 @@
 import {Agent} from "@tokenring-ai/agent";
-import {ContextItem, TokenRingService} from "@tokenring-ai/agent/types";
+import {ContextItem} from "@tokenring-ai/agent/types";
+import {TokenRingService} from "@tokenring-ai/app/types";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import DatabaseProvider from "./DatabaseProvider.ts";
 
