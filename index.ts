@@ -4,7 +4,7 @@ import {TokenRingPlugin} from "@tokenring-ai/app";
 import {z} from "zod";
 import DatabaseService from "./DatabaseService.ts";
 import packageJSON from './package.json' with {type: 'json'};
-import * as tools from "./tools.ts";
+import tools from "./tools.ts";
 
 export const DatabaseConfigSchema = z.object({
   providers: z.record(z.string(), z.any())
