@@ -50,6 +50,8 @@ const inputSchema = z.object({
   sqlQuery: z.string().describe("The SQL query to execute."),
 });
 
+const requiredContextHandlers = ["available-databases"];
+
 export default {
-  name, description, inputSchema, execute,
+  name, description, inputSchema, execute, requiredContextHandlers
 } as TokenRingToolDefinition<typeof inputSchema>;

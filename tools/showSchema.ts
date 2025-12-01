@@ -34,6 +34,8 @@ const inputSchema = z.object({
     .describe("The name of the database for which to show the schema."),
 });
 
+const requiredContextHandlers = ["available-databases"];
+
 export default {
-  name, description, inputSchema, execute,
+  name, description, inputSchema, execute, requiredContextHandlers
 } as TokenRingToolDefinition<typeof inputSchema>;
