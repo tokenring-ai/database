@@ -25,7 +25,7 @@ export default {
       app.addServices(new DatabaseService());
     }
   }
-} as TokenRingPlugin;
+} satisfies TokenRingPlugin;
 
 export {default as DatabaseProvider} from "./DatabaseProvider.js";
 export {default as DatabaseService} from "./DatabaseService.ts";
