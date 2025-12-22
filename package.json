@@ -10,15 +10,22 @@
     "@tokenring-ai/utility": "0.2.0"
   },
   "devDependencies": {
-    "bun-types": "catalog:"
+    "bun-types": "catalog:",
+    "vitest": "catalog:",
+    "typescript": "catalog:"
   },
   "main": "index.ts",
   "type": "module",
   "scripts": {
-    "eslint": "eslint --fix ./"
+    "eslint": "eslint --fix ./",
+    "test": "vitest run",
+    "build": "tsc --noEmit",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "exports": {
     ".": "./index.ts",
     "./*": "./*.ts"
-  }
+  },
+  "license": "MIT"
 }
