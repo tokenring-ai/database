@@ -3,7 +3,7 @@ import {TokenRingToolDefinition} from "@tokenring-ai/chat/types";
 import {z} from "zod";
 import DatabaseService from "../DatabaseService.js";
 
-const name = "database/showSchema";
+const name = "database_showSchema";
 
 interface ShowSchemaParams {
   databaseName?: string;

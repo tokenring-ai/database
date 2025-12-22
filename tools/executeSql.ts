@@ -4,7 +4,7 @@ import {z} from "zod";
 import DatabaseService from "../DatabaseService.js";
 
 // Export the tool name in the required format
-const name = "database/executeSql";
+const name = "database_executeSql";
 
 async function execute(
   {databaseName, sqlQuery}: z.infer<typeof inputSchema>,
