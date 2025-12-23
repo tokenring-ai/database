@@ -4,11 +4,6 @@ import {z} from "zod";
 import DatabaseService from "../DatabaseService.js";
 
 const name = "database_showSchema";
-
-interface ShowSchemaParams {
-  databaseName?: string;
-}
-
 async function execute(
   {databaseName}: z.infer<typeof inputSchema>,
   agent: Agent
