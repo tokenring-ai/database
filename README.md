@@ -9,7 +9,7 @@ The package focuses on abstraction, requiring implementers to extend `DatabasePr
 ## Installation
 
 ```bash
-npm install @tokenring-ai/database
+bun install @tokenring-ai/database
 ```
 
 ## Package Structure
@@ -69,7 +69,7 @@ interface ExecuteSqlResult {
 The package provides two agent tools that integrate with the TokenRing chat system:
 
 ### executeSql
-- **Name**: `database/executeSql`
+- **Name**: `database_executeSql`
 - **Description**: Executes an arbitrary SQL query on a database
 - **Input Schema**:
   ```typescript
@@ -85,7 +85,7 @@ The package provides two agent tools that integrate with the TokenRing chat syst
   - Provides detailed error messages for missing databases
 
 ### showSchema
-- **Name**: `database/showSchema`
+- **Name**: `database_showSchema`
 - **Description**: Shows the 'CREATE TABLE' statements for all tables in the specified database
 - **Input Schema**:
   ```typescript
@@ -137,10 +137,7 @@ export default {
 interface DatabaseConfig {
   providers?: Record<string, any>;
 }
-```
 
-The configuration is validated using Zod schema:
-```typescript
 export const DatabaseConfigSchema = z.object({
   providers: z.record(z.string(), z.any())
 }).optional();
@@ -301,13 +298,13 @@ Agents can use the database tools directly:
 
 ```typescript
 // Execute a SELECT query
-await agent.callTool('database/executeSql', {
+await agent.callTool('database_executeSql', {
   databaseName: 'myPostgres',
   sqlQuery: 'SELECT * FROM users WHERE active = true'
 });
 
 // Show schema
-await agent.callTool('database/showSchema', {
+await agent.callTool('database_showSchema', {
   databaseName: 'myPostgres'
 });
 ```
