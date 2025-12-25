@@ -347,8 +347,12 @@ if (!databaseResource) {
 ## Development
 
 ```bash
-# Run ESLint
-npm run eslint
+
+# Run tests
+bun run test
+
+# Run tests with coverage
+bun run test:coverage
 ```
 
 ## Error Handling
@@ -362,4 +366,4 @@ The package provides comprehensive error handling:
 
 ## License
 
-See LICENSE file for details.
+MIT
