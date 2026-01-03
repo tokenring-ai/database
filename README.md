@@ -48,7 +48,7 @@ Abstract base class for concrete database implementations. Extend this to connec
 **Constructor Options:**
 ```typescript
 interface DatabaseProviderOptions {
-  allowWrites?: boolean;  // Defaults to false
+  allowWrites?: boolean;
 }
 ```
 
@@ -69,13 +69,14 @@ interface ExecuteSqlResult {
 The package provides two agent tools that integrate with the TokenRing chat system:
 
 ### executeSql
+
 - **Name**: `database_executeSql`
-- **Description**: Executes an arbitrary SQL query on a database
+- **Description**: Executes an arbitrary SQL query on a database using the DatabaseResource. WARNING: Use with extreme caution as this can modify or delete data.
 - **Input Schema**:
   ```typescript
   {
-    databaseName?: string,  // Optional: The name of the database to target
-    sqlQuery: string        // The SQL query to execute
+    databaseName?: string;  // Optional: The name of the database to target
+    sqlQuery: string;       // Required: The SQL query to execute
   }
   ```
 - **Features**:
@@ -85,12 +86,13 @@ The package provides two agent tools that integrate with the TokenRing chat syst
   - Provides detailed error messages for missing databases
 
 ### showSchema
+
 - **Name**: `database_showSchema`
-- **Description**: Shows the 'CREATE TABLE' statements for all tables in the specified database
+- **Description**: Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database.
 - **Input Schema**:
   ```typescript
   {
-    databaseName: string  // Required: The name of the database
+    databaseName: string;  // Required: The name of the database
   }
   ```
 - **Features**:
@@ -101,6 +103,7 @@ The package provides two agent tools that integrate with the TokenRing chat syst
 ## Context Handlers
 
 ### available-databases
+
 Automatically provides agents with information about available databases through the context system.
 
 **Functionality:**
@@ -113,26 +116,29 @@ Automatically provides agents with information about available databases through
 The package exports a TokenRing plugin that automatically integrates with the application:
 
 ```typescript
+import databasePlugin from '@tokenring-ai/database';
+
 export default {
   name: packageJSON.name,
   version: packageJSON.version,
   description: packageJSON.description,
-  install(app: TokenRingApp) {
-    const config = app.getConfigSlice('database', DatabaseConfigSchema);
-    if (config) {
+  install(app, config) {
+    if (config.database) {
       app.waitForService(ChatService, chatService => {
         chatService.addTools(packageJSON.name, tools);
         chatService.registerContextHandlers(contextHandlers);
       });
       app.addServices(new DatabaseService());
     }
-  }
-}
+  },
+  config: packageConfigSchema
+} satisfies TokenRingPlugin<typeof packageConfigSchema>;
 ```
 
 ## Configuration
 
 ### DatabaseConfig Schema
+
 ```typescript
 interface DatabaseConfig {
   providers?: Record<string, any>;
@@ -144,7 +150,11 @@ export const DatabaseConfigSchema = z.object({
 ```
 
 ### Example Configuration
+
 ```typescript
+import TokenRingApp from '@tokenring-ai/app';
+import databasePlugin from '@tokenring-ai/database';
+
 const app = new TokenRingApp({
   config: {
     database: {
@@ -161,6 +171,8 @@ const app = new TokenRingApp({
     }
   }
 });
+
+app.use(databasePlugin);
 ```
 
 ## Usage Examples
@@ -284,6 +296,7 @@ export class MySQLProvider extends DatabaseProvider {
 ## Agent Integration
 
 ### Context Provision
+
 Agents automatically receive context about available databases through the `available-databases` context handler:
 
 ```
@@ -294,12 +307,18 @@ Agents automatically receive context about available databases through the `avai
 ```
 
 ### Tool Usage in Agents
+
 Agents can use the database tools directly:
 
 ```typescript
 // Execute a SELECT query
 await agent.callTool('database_executeSql', {
   databaseName: 'myPostgres',
+  sqlQuery: 'SELECT * FROM users WHERE active = true'
+});
+
+// Execute with optional database name (can also be specified in SQL query)
+await agent.callTool('database_executeSql', {
   sqlQuery: 'SELECT * FROM users WHERE active = true'
 });
 
@@ -312,6 +331,7 @@ await agent.callTool('database_showSchema', {
 ## Security Features
 
 ### Write Operation Protection
+
 The `executeSql` tool includes automatic protection for non-SELECT queries:
 
 ```typescript
@@ -328,21 +348,15 @@ if (!sqlQuery.trim().startsWith("SELECT")) {
 ```
 
 ### Database Validation
+
 Both tools validate that the specified database exists before execution:
+
 ```typescript
 const databaseResource = databaseService.getDatabaseByName(databaseName);
 if (!databaseResource) {
   throw new Error(`[${name}] Database ${databaseName} not found`);
 }
 ```
-
-## Dependencies
-
-- `@tokenring-ai/app` (v0.2.0): Core application framework and TokenRingService interface
-- `@tokenring-ai/chat` (v0.2.0): Chat service and tool definitions
-- `@tokenring-ai/agent` (v0.2.0): Agent framework and types
-- `@tokenring-ai/utility` (v0.2.0): KeyedRegistry implementation
-- `zod`: Schema validation for configuration and tool inputs
 
 ## Development
 
@@ -366,4 +380,4 @@ The package provides comprehensive error handling:
 
 ## License
 
-MIT
+MIT License - see [LICENSE](./LICENSE) file for details.
