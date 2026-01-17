@@ -25,8 +25,7 @@ async function execute(
   }
 
   if (!sqlQuery.trim().startsWith("SELECT")) {
-    const approved = await agent.askHuman({
-      type: "askForConfirmation",
+    const approved = await agent.askForConfirmation({
       message: `Execute SQL write operation on database '${databaseName}'?\n\nQuery: ${sqlQuery}`,
     });
 
