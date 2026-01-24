@@ -5,6 +5,7 @@ import DatabaseService from "../DatabaseService.js";
 
 // Export the tool name in the required format
 const name = "database_executeSql";
+const displayName = "Database/executeSql";
 
 async function execute(
   {databaseName, sqlQuery}: z.infer<typeof inputSchema>,
@@ -52,5 +53,5 @@ const inputSchema = z.object({
 const requiredContextHandlers = ["available-databases"];
 
 export default {
-  name, description, inputSchema, execute, requiredContextHandlers
+  name, displayName, description, inputSchema, execute, requiredContextHandlers
 } satisfies TokenRingToolDefinition<typeof inputSchema>;
