@@ -1,5 +1,5 @@
 import Agent from "@tokenring-ai/agent/Agent";
-import {TokenRingToolDefinition} from "@tokenring-ai/chat/schema";
+import {TokenRingToolDefinition, type TokenRingToolJSONResult} from "@tokenring-ai/chat/schema";
 import {z} from "zod";
 import DatabaseService from "../DatabaseService.js";
 
@@ -8,19 +8,12 @@ const name = "database_executeSql";
 const displayName = "Database/executeSql";
 
 async function execute(
-  {databaseName, sqlQuery}: z.infer<typeof inputSchema>,
+  {databaseName, sqlQuery}: z.output<typeof inputSchema>,
   agent: Agent
-): Promise<string | object> {
+) : Promise<TokenRingToolJSONResult<any>> {
   const databaseService = agent.requireServiceByType(DatabaseService);
-  if (!databaseName) {
-    throw new Error(`[${name}] databaseName is required`);
-  }
-  if (!sqlQuery) {
-    throw new Error(`[${name}] sqlQuery is required`);
-  }
 
-
-  const databaseResource = databaseService.getDatabaseByName(databaseName);
+  const databaseResource = databaseService.getDatabaseByName(databaseName || '');
   if (!databaseResource) {
     throw new Error(`[${name}] Database ${databaseName} not found`);
   }
@@ -34,7 +27,8 @@ async function execute(
       throw new Error("User did not approve the SQL query that was provided.");
     }
   }
-  return databaseResource.executeSql(sqlQuery);
+  const result = await databaseResource.executeSql(sqlQuery);
+  return { type: 'json', data: result };
 }
 
 const description =

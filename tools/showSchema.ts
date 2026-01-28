@@ -1,24 +1,21 @@
 import Agent from "@tokenring-ai/agent/Agent";
-import {TokenRingToolDefinition} from "@tokenring-ai/chat/schema";
+import {TokenRingToolDefinition, type TokenRingToolJSONResult} from "@tokenring-ai/chat/schema";
 import {z} from "zod";
 import DatabaseService from "../DatabaseService.js";
 
 const name = "database_showSchema";
 const displayName = "Database/showSchema";
 async function execute(
-  {databaseName}: z.infer<typeof inputSchema>,
+  {databaseName}: z.output<typeof inputSchema>,
   agent: Agent
-): Promise<Record<string, any> | string> {
+) : Promise<TokenRingToolJSONResult<any>> {
   const databaseService = agent.requireServiceByType(DatabaseService);
-  if (!databaseName) {
-    throw new Error(`[${name}] databaseName is required`);
-  }
 
   const databaseResource = databaseService.getDatabaseByName(databaseName);
   if (!databaseResource) {
     throw new Error(`[${name}] Database ${databaseName} not found`);
   }
-  return databaseResource.showSchema();
+  return { type: 'json', data: await databaseResource.showSchema() };
 }
 
 const description =
