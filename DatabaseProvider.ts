@@ -8,10 +8,7 @@ export interface ExecuteSqlResult {
 }
 
 export default class DatabaseProvider {
-  allowWrites: boolean;
-
-  constructor({allowWrites}: DatabaseProviderOptions) {
-    this.allowWrites = allowWrites ?? false;
+  constructor(private allowWrites: boolean = false) {
   }
 
   /**
