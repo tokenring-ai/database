@@ -31,24 +31,22 @@ const DatabaseConfigSchema = z.object({
 }).optional();
 ```
 
-### Configuration Example
+### Plugin Configuration
+
+The plugin configuration is optional. When provided, the plugin will register tools and context handlers:
 
 ```typescript
 const pluginConfig = {
   database: {
     providers: {
-      myPostgres: {
-        allowWrites: true,
-        connectionString: process.env.DB_URL
-      },
-      myReadonlyDb: {
-        allowWrites: false,
-        connectionString: process.env.READONLY_DB_URL
-      }
+      myPostgres: {},
+      myReadonlyDb: {}
     }
   }
 };
 ```
+
+**Note**: The configuration schema is currently a placeholder (`z.any()`) and does not enforce specific provider properties. The actual database provider configuration is handled through the `DatabaseProvider` constructor options.
 
 ## Plugin Usage
 
@@ -61,24 +59,13 @@ import { TokenRingApp } from "@tokenring-ai/app";
 import { DatabaseConfigSchema } from "@tokenring-ai/database";
 import databasePlugin from "@tokenring-ai/database";
 
-const app = new TokenRingApp({
-  database: {
-    providers: {
-      myPostgres: {
-        allowWrites: true,
-        connectionString: process.env.DB_URL
-      }
-    }
-  }
-});
+const app = new TokenRingApp();
 
 app.install(databasePlugin, {
   database: DatabaseConfigSchema.parse({
     providers: {
-      myPostgres: {
-        allowWrites: true,
-        connectionString: process.env.DB_URL
-      }
+      myPostgres: {},
+      myReadonlyDb: {}
     }
   })
 });
@@ -116,6 +103,7 @@ Executes an arbitrary SQL query on a database. WARNING: Use with extreme caution
 ```
 
 **Features:**
+
 - Automatically prompts for human confirmation on non-SELECT queries
 - Validates database existence before execution
 - Provides detailed error messages for missing databases
@@ -151,7 +139,7 @@ Shows the schema information for all tables in the specified database.
 {
   name: "database_showSchema",
   displayName: "Database/showSchema",
-  description: "Shows the schema information for all tables in the specified database.",
+  description: "Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database.",
   inputSchema: {
     databaseName: string  // Required: The name of the database
   },
@@ -160,6 +148,7 @@ Shows the schema information for all tables in the specified database.
 ```
 
 **Features:**
+
 - Validates database existence
 - Returns structured schema information as key-value map
 
@@ -476,7 +465,6 @@ pkg/database/
 ├── contextHandlers/
 │   └── availableDatabases.ts        # Database availability context handler
 ├── vitest.config.ts                 # Test configuration
-└── tsconfig.json                    # TypeScript configuration
 ```
 
 ### Build and Test
@@ -490,8 +478,8 @@ bun run test:watch  # Run tests in watch mode
 ### Dependencies
 
 - `@tokenring-ai/app` - Base application framework and plugin system
+- `@tokenring-ai/chat` - Chat service for tool and context handler registration
 - `@tokenring-ai/agent` - Central orchestration system
-- `@tokenring-ai/chat` - Chat service and context handling
 - `@tokenring-ai/utility` - Shared utilities including KeyedRegistry
 - `zod` - Runtime type validation and schema definition
 
