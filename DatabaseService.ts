@@ -3,7 +3,7 @@ import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import DatabaseProvider from "./DatabaseProvider.ts";
 
 export default class DatabaseService implements TokenRingService {
-  name = "DatabaseService";
+  readonly name = "DatabaseService";
   description = "Database service";
   databases = new KeyedRegistry<DatabaseProvider>();
 
