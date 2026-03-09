@@ -38,23 +38,21 @@ The main service class that implements `TokenRingService` interface. It manages 
 **Resource Management Methods:**
 
 ```typescript
-registerDatabase(name: string, provider: DatabaseProvider): void
-
-getDatabaseByName(name: string): DatabaseProvider | undefined
-
-getAvailableDatabases(): string[]
+registerDatabase = this.databases.register
+getDatabaseByName = this.databases.getItemByName
+getAvailableDatabases = this.databases.getAllItemNames
 ```
+
+These methods are exposed as arrow functions that delegate to the underlying `KeyedRegistry` instance.
 
 ### DatabaseProvider
 
 Abstract base class for concrete database implementations. All database provider implementations must extend this class and implement the required methods.
 
-**Constructor Options:**
+**Constructor:**
 
 ```typescript
-export interface DatabaseProviderOptions {
-  allowWrites?: boolean;
-}
+constructor(allowWrites: boolean = false)
 ```
 
 **Properties:**
@@ -96,6 +94,11 @@ z.object({
 
 **Required Context Handlers:** `["available-databases"]`
 
+**Behavior:**
+- If the query does not start with "SELECT", the agent will request human approval before execution
+- If the user does not approve, a `CommandFailedError` is thrown with the message "User did not approve the SQL query that was provided."
+- If the database is not found, an error is thrown with the message `[database_executeSql] Database <databaseName> not found`
+
 #### database_showSchema
 
 Shows the `'CREATE TABLE'` statements (or equivalent) for all tables in the specified database.
@@ -110,6 +113,9 @@ z.object({
 ```
 
 **Required Context Handlers:** `["available-databases"]`
+
+**Behavior:**
+- If the database is not found, an error is thrown with the message `[database_showSchema] Database <databaseName> not found`
 
 ### Context Handlers
 
@@ -126,6 +132,11 @@ Automatically provides agents with information about available databases.
 - sqlite
 ```
 
+**Implementation Details:**
+- The context handler retrieves all registered database names from the `DatabaseService`
+- If no databases are registered, no context item is yielded
+- The context handler is automatically registered when the plugin is installed with a database configuration
+
 ## Usage Examples
 
 ### 1. Implementing a Concrete DatabaseProvider
@@ -137,9 +148,9 @@ import { Pool } from 'pg';
 export class PostgresProvider extends DatabaseProvider {
   private pool: Pool;
 
-  constructor(options: { connectionString: string, allowWrites?: boolean }) {
-    super(options.allowWrites ?? false);
-    this.pool = new Pool({ connectionString: options.connectionString });
+  constructor(connectionString: string, allowWrites: boolean = false) {
+    super(allowWrites);
+    this.pool = new Pool({ connectionString });
   }
 
   async executeSql(sqlQuery: string): Promise<ExecuteSqlResult> {
@@ -179,17 +190,17 @@ export class PostgresProvider extends DatabaseProvider {
 ### 2. Using Direct Service API
 
 ```typescript
-import { DatabaseService } from '@tokenring-ai/database/DatabaseService';
+import DatabaseService from '@tokenring-ai/database/DatabaseService';
 import PostgresProvider from './PostgresProvider';
 
 // Create the service
 const dbService = new DatabaseService();
 
 // Register a database provider
-const postgresDb = new PostgresProvider({
-  allowWrites: true,
-  connectionString: process.env.DB_URL
-});
+const postgresDb = new PostgresProvider(
+  process.env.DB_URL,
+  true  // allowWrites
+);
 
 dbService.registerDatabase('myPostgres', postgresDb);
 
@@ -255,6 +266,25 @@ const result = await agent.callTool('database_executeSql', {
 console.log('Query results:', result);
 ```
 
+### 5. Error Handling
+
+```typescript
+try {
+  const result = await agent.callTool('database_executeSql', {
+    databaseName: 'myPostgres',
+    sqlQuery: 'DELETE FROM users WHERE id = 1'
+  });
+} catch (error) {
+  if (error.message.includes('User did not approve')) {
+    console.log('Query was not approved by user');
+  } else if (error.message.includes('not found')) {
+    console.log('Database not found');
+  } else {
+    console.log('Query execution failed:', error);
+  }
+}
+```
+
 ## Configuration
 
 ### Plugin Configuration Schema
@@ -289,6 +319,8 @@ app.install(databasePlugin, {
   }
 });
 ```
+
+**Note:** The configuration schema accepts a record of provider configurations, but the actual provider instantiation is left to the implementer. The plugin registers the `DatabaseService` and makes it available for tools and context handlers to use.
 
 ## Integration
 
