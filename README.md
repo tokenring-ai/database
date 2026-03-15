@@ -4,7 +4,7 @@
 
 The `@tokenring-ai/database` package provides an abstract database layer for managing database resources within TokenRing AI agents. It enables the registration and interaction with multiple database connections through a unified `DatabaseService` that integrates with the TokenRing plugin system and agent framework.
 
-The package focuses on abstraction, requiring implementers to extend `DatabaseProvider` for specific database types. It supports tool-based interaction with agents, context handlers for database availability, and write operation protection through human confirmation for non-SELECT queries.
+The package focuses on abstraction, requiring implementers to extend `DatabaseProvider` for specific database types. It supports tool-based interaction with agents, context handlers for database availability injection, and write operation protection through human confirmation for non-SELECT queries.
 
 ## Key Features
 
@@ -15,7 +15,7 @@ The package focuses on abstraction, requiring implementers to extend `DatabasePr
 - Write protection with human confirmation for non-SELECT queries
 - Schema inspection capabilities
 - Type-safe tool execution with Zod schemas
-- Required context handler enforcement (`available-databases`)
+- Required context handlers enforcement (`available-databases`)
 
 ## Installation
 
@@ -52,17 +52,17 @@ Abstract base class for concrete database implementations. All database provider
 **Constructor:**
 
 ```typescript
-constructor(allowWrites: boolean = false)
+constructor(private allowWrites: boolean = false)
 ```
 
 **Properties:**
 
-- `allowWrites: boolean` - Whether write operations are allowed on this provider (defaults to false)
+- `allowWrites: boolean` (private) - Whether write operations are allowed on this provider (defaults to false)
 
 **Abstract Methods (must be implemented):**
 
 ```typescript
-async executeSql(sqlQuery: string): Promise<ExecuteSqlResult>
+async executeSql(_sqlQuery: string): Promise<ExecuteSqlResult>
 
 async showSchema(): Promise<Record<string, string>>
 ```
@@ -82,6 +82,11 @@ export interface ExecuteSqlResult {
 
 Executes an arbitrary SQL query on a database. WARNING: Use with extreme caution as this can modify or delete data.
 
+**Tool Properties:**
+
+- `name: "database_executeSql"`
+- `displayName: "Database/executeSql"`
+
 **Input Schema:**
 
 ```typescript
@@ -96,12 +101,19 @@ z.object({
 
 **Behavior:**
 - If the query does not start with "SELECT", the agent will request human approval before execution
-- If the user does not approve, a `CommandFailedError` is thrown with the message "User did not approve the SQL query that was provided."
+- If the user does not approve, an error is thrown with the message "User did not approve the SQL query that was provided."
 - If the database is not found, an error is thrown with the message `[database_executeSql] Database <databaseName> not found`
+
+**Return Type:** `TokenRingToolJSONResult<any>` with type `'json'`
 
 #### database_showSchema
 
 Shows the `'CREATE TABLE'` statements (or equivalent) for all tables in the specified database.
+
+**Tool Properties:**
+
+- `name: "database_showSchema"`
+- `displayName: "Database/showSchema"`
 
 **Input Schema:**
 
@@ -116,6 +128,8 @@ z.object({
 
 **Behavior:**
 - If the database is not found, an error is thrown with the message `[database_showSchema] Database <databaseName> not found`
+
+**Return Type:** `TokenRingToolJSONResult<any>` with type `'json'`
 
 ### Context Handlers
 
@@ -143,7 +157,6 @@ Automatically provides agents with information about available databases.
 
 ```typescript
 import DatabaseProvider, { ExecuteSqlResult } from '@tokenring-ai/database';
-import { Pool } from 'pg';
 
 export class PostgresProvider extends DatabaseProvider {
   private pool: Pool;
@@ -301,6 +314,8 @@ export const DatabaseConfigSchema = z.object({
 }).optional();
 ```
 
+**Note:** The `DatabaseConfigSchema` is exported from `@tokenring-ai/database` and can be imported for type-safe configuration.
+
 ### Configuration Example
 
 ```typescript
@@ -320,7 +335,7 @@ app.install(databasePlugin, {
 });
 ```
 
-**Note:** The configuration schema accepts a record of provider configurations, but the actual provider instantiation is left to the implementer. The plugin registers the `DatabaseService` and makes it available for tools and context handlers to use.
+**Note:** The configuration schema accepts a record of provider configurations, but the actual provider instantiation is left to the implementer. The plugin registers the `DatabaseService` and makes it available for tools and context handlers to use. Implementers must manually register database providers with the service.
 
 ## Integration
 
@@ -376,6 +391,25 @@ The plugin automatically registers two tools with the ChatService:
 
 The plugin automatically registers the `available-databases` context handler with the ChatService.
 
+## Package Exports
+
+The package provides the following exports:
+
+```json
+{
+  "exports": {
+    ".": "./index.ts",
+    "./*": "./*.ts"
+  }
+}
+```
+
+**Main Export:** `@tokenring-ai/database` - Exports `DatabaseConfigSchema`, `DatabaseProvider`, and `DatabaseService`
+
+**Direct Imports:**
+- `@tokenring-ai/database/DatabaseService` - Direct import of DatabaseService
+- `@tokenring-ai/database/DatabaseProvider` - Direct import of DatabaseProvider
+
 ## RPC Endpoints
 
 This package does not define RPC endpoints. Database operations are performed through the agent tool system.
@@ -395,6 +429,7 @@ This package does not define state slices. Database providers manage their own c
 - **Tool Usage**: Use tools (`database_executeSql` and `database_showSchema`) instead of direct service calls
 - **Required Context Handlers**: Always register `available-databases` context handler to provide database names to agents
 - **Provider Abstraction**: Implement custom providers for specific database systems to maintain abstraction layer
+- **Manual Provider Registration**: The plugin does not automatically instantiate providers from configuration. Implementers must manually register providers with the `DatabaseService` after installation.
 
 ## Testing
 
