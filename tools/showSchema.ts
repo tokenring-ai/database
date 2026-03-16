@@ -18,8 +18,7 @@ async function execute(
   return { type: 'json', data: await databaseResource.showSchema() };
 }
 
-const description =
-  "Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database.";
+const description = "Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database.";
 
 const inputSchema = z.object({
   databaseName: z

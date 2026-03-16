@@ -31,8 +31,7 @@ async function execute(
   return { type: 'json', data: result };
 }
 
-const description =
-  "Executes an arbitrary SQL query on a database using the DatabaseResource. WARNING: Use with extreme caution as this can modify or delete data.";
+const description = "Executes an arbitrary SQL query on a database using the DatabaseResource. WARNING: Use with extreme caution as this can modify or delete data.";
 
 const inputSchema = z.object({
   databaseName: z
