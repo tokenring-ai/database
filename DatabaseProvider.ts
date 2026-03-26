@@ -19,9 +19,9 @@ export default class DatabaseProvider {
   }
 
   /**
-   * Shows the schema for all tables in a given database.
+   * Shows the schema for all tables in the database.
    */
   async showSchema(): Promise<Record<string, string>> {
-    throw new Error("Method 'showSchema(databaseName)' must be implemented.");
+    throw new Error("Method 'showSchema()' must be implemented.");
   }
 }

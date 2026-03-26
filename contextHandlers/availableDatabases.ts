@@ -3,7 +3,7 @@ import DatabaseService from "../DatabaseService.ts";
 
 export default async function* getContextItems({agent}: ContextHandlerOptions): AsyncGenerator<ContextItem> {
   const databaseService = agent.requireServiceByType(DatabaseService);
-  const available = databaseService['databases'].getAllItemNames();
+  const available = databaseService.getAvailableDatabases();
   if (available.length === 0) return;
 
   yield {

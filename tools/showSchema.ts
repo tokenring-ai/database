@@ -1,7 +1,7 @@
 import Agent from "@tokenring-ai/agent/Agent";
 import {TokenRingToolDefinition, type TokenRingToolJSONResult} from "@tokenring-ai/chat/schema";
 import {z} from "zod";
-import DatabaseService from "../DatabaseService.js";
+import DatabaseService from "../DatabaseService.ts";
 
 const name = "database_showSchema";
 const displayName = "Database/showSchema";

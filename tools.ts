@@ -1,5 +1,5 @@
-import executeSql from "./tools/executeSql.js";
-import showSchema from "./tools/showSchema.js";
+import executeSql from "./tools/executeSql.ts";
+import showSchema from "./tools/showSchema.ts";
 
 export default {
   executeSql,
