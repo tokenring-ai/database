@@ -59,6 +59,16 @@ constructor(private allowWrites: boolean = false)
 
 - `allowWrites: boolean` (private) - Whether write operations are allowed on this provider (defaults to false)
 
+**DatabaseProviderOptions Interface:**
+
+```typescript
+export interface DatabaseProviderOptions {
+  allowWrites?: boolean;
+}
+```
+
+This interface defines the options for configuring a database provider. The `allowWrites` flag controls whether write operations are permitted.
+
 **Abstract Methods (must be implemented):**
 
 ```typescript
@@ -103,10 +113,12 @@ z.object({
 
 **Behavior:**
 1. Retrieves the target database from the `DatabaseService`
-2. If the query does not start with "SELECT", requests human approval via `agent.askForApproval()`
+2. If the query does not start with "SELECT" (case-sensitive check), requests human approval via `agent.askForApproval()`
 3. If approval is denied, throws error: "User did not approve the SQL query that was provided."
 4. If the database is not found, throws error: `[database_executeSql] Database <databaseName> not found`
 5. Executes the SQL query and returns results as JSON
+
+**Note:** The SELECT check is case-sensitive. Queries starting with "select" (lowercase) will also require approval.
 
 **Return Type:** `TokenRingToolJSONResult<any>` with type `'json'`
 
@@ -379,7 +391,11 @@ app.waitForService(DatabaseService, dbService => {
 });
 ```
 
-**Important:** The plugin does not automatically instantiate database providers from configuration. The configuration object is used to signal that the plugin should be activated and register the `DatabaseService`. Implementers must manually create and register database provider instances with the service after installation.
+**Important:** The plugin does not automatically instantiate database providers from configuration. The configuration object serves two purposes:
+1. It signals that the plugin should be activated
+2. It triggers the registration of the `DatabaseService`
+
+Implementers must manually create and register database provider instances with the service after installation. The configuration record keys (`providers`) can be used as a reference for database names, but no actual provider instantiation occurs automatically.
 
 ## Integration
 
@@ -402,7 +418,7 @@ app.install(databasePlugin, {
 
 ### Service Registration
 
-The `DatabaseService` is automatically registered when the plugin is installed with a database configuration. The plugin follows this installation flow:
+The `DatabaseService` is registered when the plugin is installed with a database configuration. The plugin follows this installation flow:
 
 ```typescript
 export default {
@@ -411,14 +427,13 @@ export default {
   description: "Abstract database resources and interfaces",
   install(app, config) {
     if (config.database) {
-      // Register the DatabaseService immediately
-      app.addServices(new DatabaseService());
-
       // Wait for ChatService then register tools and context handlers
       app.waitForService(ChatService, chatService => {
         chatService.addTools(tools);
         chatService.registerContextHandlers(contextHandlers);
       });
+      // Register the DatabaseService
+      app.addServices(new DatabaseService());
     }
   },
   config: packageConfigSchema,
@@ -426,10 +441,11 @@ export default {
 ```
 
 **Important Notes:**
-- The `DatabaseService` is registered immediately when the plugin is installed with a database configuration
-- Tools and context handlers are registered only after the `ChatService` is available
+- The `DatabaseService` is registered when the plugin is installed with a `database` configuration
+- The `DatabaseService` is added to the app immediately during plugin installation
+- Tools and context handlers are registered asynchronously after the `ChatService` is available via `waitForService`
 - The plugin does not instantiate database providers - this must be done manually by the implementer
-- Providers must be registered with the `DatabaseService` after both the plugin is installed and the service is available
+- Providers must be registered with the `DatabaseService` after the plugin is installed
 
 ### Tool Registration
 
@@ -485,7 +501,8 @@ This package does not define state slices. Database providers manage their own c
 - **Connection Management**: Always release database connections to avoid resource leaks. Use try/finally patterns or connection pooling
 - **Schema Validation**: The `available-databases` context handler provides database names to agents. Tools validate database existence before execution
 - **Tool Usage**: Prefer using tools (`database_executeSql` and `database_showSchema`) for agent interactions. They include built-in safety checks and context handling
-- **Required Context Handlers**: The `available-databases` context handler is required by both tools. It is automatically registered when the plugin is installed with a database configuration
+- **Required Context Handlers**: The `available-databases` context handler is required by both tools. It is automatically registered when the plugin is installed with a database configuration and the ChatService is available
+- **Case-Sensitive SELECT Check**: The write protection check is case-sensitive. Only queries starting with uppercase "SELECT" bypass the approval requirement
 - **Provider Abstraction**: Implement custom providers for specific database systems (PostgreSQL, MySQL, SQLite, etc.) to maintain the abstraction layer
 - **Manual Provider Registration**: The plugin does not automatically instantiate providers from configuration. After installing the plugin, manually create and register provider instances:
 

@@ -1,6 +1,6 @@
 {
   "name": "@tokenring-ai/database",
-  "description": "Abstract database resources and interfaces",
+  "description": "Abstract SQL interface for schema inspection and query execution across providers.",
   "version": "0.2.0",
   "dependencies": {
     "@tokenring-ai/app": "0.2.0",
