@@ -1,6 +1,6 @@
-import {TokenRingService} from "@tokenring-ai/app/types";
+import type {TokenRingService} from "@tokenring-ai/app/types";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
-import DatabaseProvider from "./DatabaseProvider.ts";
+import type DatabaseProvider from "./DatabaseProvider.ts";
 
 export default class DatabaseService implements TokenRingService {
   readonly name = "DatabaseService";
@@ -10,5 +10,4 @@ export default class DatabaseService implements TokenRingService {
   registerDatabase = this.databases.register;
   getDatabaseByName = this.databases.getItemByName;
   getAvailableDatabases = this.databases.getAllItemNames;
-
 }

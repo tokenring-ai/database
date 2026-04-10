@@ -1,5 +1,5 @@
-import Agent from "@tokenring-ai/agent/Agent";
-import {TokenRingToolDefinition, type TokenRingToolJSONResult} from "@tokenring-ai/chat/schema";
+import type Agent from "@tokenring-ai/agent/Agent";
+import type {TokenRingToolDefinition, TokenRingToolJSONResult,} from "@tokenring-ai/chat/schema";
 import {z} from "zod";
 import DatabaseService from "../DatabaseService.ts";
 
@@ -9,11 +9,13 @@ const displayName = "Database/executeSql";
 
 async function execute(
   {databaseName, sqlQuery}: z.output<typeof inputSchema>,
-  agent: Agent
-) : Promise<TokenRingToolJSONResult<any>> {
+  agent: Agent,
+): Promise<TokenRingToolJSONResult<any>> {
   const databaseService = agent.requireServiceByType(DatabaseService);
 
-  const databaseResource = databaseService.getDatabaseByName(databaseName || '');
+  const databaseResource = databaseService.getDatabaseByName(
+    databaseName || "",
+  );
   if (!databaseResource) {
     throw new Error(`[${name}] Database ${databaseName} not found`);
   }
@@ -28,17 +30,18 @@ async function execute(
     }
   }
   const result = await databaseResource.executeSql(sqlQuery);
-  return { type: 'json', data: result };
+  return {type: "json", data: result};
 }
 
-const description = "Executes an arbitrary SQL query on a database using the DatabaseResource. WARNING: Use with extreme caution as this can modify or delete data.";
+const description =
+  "Executes an arbitrary SQL query on a database using the DatabaseResource. WARNING: Use with extreme caution as this can modify or delete data.";
 
 const inputSchema = z.object({
   databaseName: z
     .string()
     .optional()
     .describe(
-      "Optional: The name of the database to target. May also be specified in the SQL query."
+      "Optional: The name of the database to target. May also be specified in the SQL query.",
     ),
   sqlQuery: z.string().describe("The SQL query to execute."),
 });
@@ -46,5 +49,10 @@ const inputSchema = z.object({
 const requiredContextHandlers = ["available-databases"];
 
 export default {
-  name, displayName, description, inputSchema, execute, requiredContextHandlers
+  name,
+  displayName,
+  description,
+  inputSchema,
+  execute,
+  requiredContextHandlers,
 } satisfies TokenRingToolDefinition<typeof inputSchema>;

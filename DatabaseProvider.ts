@@ -14,14 +14,14 @@ export default class DatabaseProvider {
   /**
    * Executes an SQL query.
    */
-  async executeSql(_sqlQuery: string): Promise<ExecuteSqlResult> {
+  executeSql(_sqlQuery: string): Promise<ExecuteSqlResult> {
     throw new Error("Method 'executeSql()' must be implemented.");
   }
 
   /**
    * Shows the schema for all tables in the database.
    */
-  async showSchema(): Promise<Record<string, string>> {
+  showSchema(): Promise<Record<string, string>> {
     throw new Error("Method 'showSchema()' must be implemented.");
   }
 }
