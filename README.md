@@ -2,9 +2,15 @@
 
 ## Overview
 
-The `@tokenring-ai/database` package provides an abstract database layer for managing database resources within TokenRing AI agents. It enables the registration and interaction with multiple database connections through a unified `DatabaseService` that integrates with the TokenRing plugin system and agent framework.
+The `@tokenring-ai/database` package provides an abstract database layer for managing
+database resources within TokenRing AI agents. It enables the registration and
+interaction with multiple database connections through a unified `DatabaseService`
+that integrates with the TokenRing plugin system and agent framework.
 
-The package focuses on abstraction, requiring implementers to extend `DatabaseProvider` for specific database types. It supports tool-based interaction with agents, context handlers for database availability injection, and write operation protection through human confirmation for non-SELECT queries.
+The package focuses on abstraction, requiring implementers to extend
+`DatabaseProvider` for specific database types. It supports tool-based interaction
+with agents, context handlers for database availability injection, and write
+operation protection through human confirmation for non-SELECT queries.
 
 ## Key Features
 
@@ -27,13 +33,17 @@ bun add @tokenring-ai/database
 
 ### DatabaseService
 
-The main service class that implements `TokenRingService` interface. It manages a registry of `DatabaseProvider` instances using the `KeyedRegistry` from `@tokenring-ai/utility`.
+The main service class that implements `TokenRingService` interface. It manages
+a registry of `DatabaseProvider` instances using the `KeyedRegistry` from
+`@tokenring-ai/utility`.
 
 **Service Properties:**
 
-- `name: string` - Service identifier ("DatabaseService")
-- `description: string` - Service description ("Database service")
-- `databases: KeyedRegistry<DatabaseProvider>` - Registry managing all database provider instances
+| Property    | Type                          | Description              |
+| ----------- | ----------------------------- | ------------------------ |
+| `name`      | `string`                      | Service identifier       |
+| `description` | `string`                    | Service description      |
+| `databases` | `KeyedRegistry<DatabaseProvider>` | Database provider registry |
 
 **Resource Management Methods:**
 
@@ -43,11 +53,13 @@ getDatabaseByName = this.databases.getItemByName
 getAvailableDatabases = this.databases.getAllItemNames
 ```
 
-These methods are exposed as arrow functions that delegate to the underlying `KeyedRegistry` instance.
+These methods are exposed as arrow functions that delegate to the underlying
+`KeyedRegistry` instance.
 
 ### DatabaseProvider
 
-Abstract base class for concrete database implementations. All database provider implementations must extend this class and implement the required methods.
+Abstract base class for concrete database implementations. All database provider
+implementations must extend this class and implement the required methods.
 
 **Constructor:**
 
@@ -57,17 +69,17 @@ constructor(private allowWrites: boolean = false)
 
 **Properties:**
 
-- `allowWrites: boolean` (private) - Whether write operations are allowed on this provider (defaults to false)
+- `allowWrites: boolean` (private) - Whether write operations are allowed
+  (defaults to false)
 
-**DatabaseProviderOptions Interface:**
+**ExecuteSqlResult Interface:**
 
 ```typescript
-export interface DatabaseProviderOptions {
-  allowWrites?: boolean;
+export interface ExecuteSqlResult {
+  rows: Record<string, string | number | null>[];
+  fields: string[];
 }
 ```
-
-This interface defines the options for configuring a database provider. The `allowWrites` flag controls whether write operations are permitted.
 
 **Abstract Methods (must be implemented):**
 
@@ -77,34 +89,27 @@ async executeSql(_sqlQuery: string): Promise<ExecuteSqlResult>
 async showSchema(): Promise<Record<string, string>>
 ```
 
-**Note:** The `DatabaseProvider` class provides default implementations that throw errors. Concrete implementations must override both methods.
-
-**Result Interface:**
-
-```typescript
-export interface ExecuteSqlResult {
-  rows: Record<string, string | number | null>[];
-  fields: string[];
-}
-```
+**Note:** The `DatabaseProvider` class provides default implementations that
+throw errors. Concrete implementations must override both methods.
 
 ### Tools
 
 #### database_executeSql
 
-Executes an arbitrary SQL query on a database. WARNING: Use with extreme caution as this can modify or delete data.
+Executes an arbitrary SQL query on a database. WARNING: Use with extreme caution
+as this can modify or delete data.
 
-**Tool Properties:**
-
-- `name: "database_executeSql"`
-- `displayName: "Database/executeSql"`
+| Property        | Value                    |
+| --------------- | ------------------------ |
+| `name`          | `"database_executeSql"`  |
+| `displayName`   | `"Database/executeSql"`  |
 
 **Input Schema:**
 
 ```typescript
 z.object({
   databaseName: z.string().optional()
-    .describe("Optional: The name of the database to target. May also be specified in the SQL query."),
+    .describe("Optional: The name of the database to target."),
   sqlQuery: z.string().describe("The SQL query to execute.")
 })
 ```
@@ -112,17 +117,20 @@ z.object({
 **Required Context Handlers:** `["available-databases"]`
 
 **Behavior:**
+
 1. Retrieves the target database from the `DatabaseService`
-2. If the query does not start with "SELECT" (case-sensitive check), requests human approval via `agent.askForApproval()`
-3. If approval is denied, throws error: "User did not approve the SQL query that was provided."
-4. If the database is not found, throws error: `[database_executeSql] Database <databaseName> not found`
+2. If the query does not start with "SELECT" (case-sensitive), requests human
+   approval via `agent.askForApproval()`
+3. If approval is denied, throws error: "User did not approve the SQL query."
+4. If the database is not found, throws error:
+   `[database_executeSql] Database <databaseName> not found`
 5. Executes the SQL query and returns results as JSON
 
-**Note:** The SELECT check is case-sensitive. Queries starting with "select" (lowercase) will also require approval.
-
-**Return Type:** `TokenRingToolJSONResult<any>` with type `'json'`
+**Note:** The SELECT check is case-sensitive. Queries starting with "select"
+(lowercase) will also require approval.
 
 **Example Response:**
+
 ```json
 {
   "type": "json",
@@ -138,12 +146,13 @@ z.object({
 
 #### database_showSchema
 
-Shows the `'CREATE TABLE'` statements (or equivalent) for all tables in the specified database.
+Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the
+specified database.
 
-**Tool Properties:**
-
-- `name: "database_showSchema"`
-- `displayName: "Database/showSchema"`
+| Property        | Value                    |
+| --------------- | ------------------------ |
+| `name`          | `"database_showSchema"`  |
+| `displayName`   | `"Database/showSchema"`  |
 
 **Input Schema:**
 
@@ -157,19 +166,20 @@ z.object({
 **Required Context Handlers:** `["available-databases"]`
 
 **Behavior:**
+
 1. Retrieves the target database from the `DatabaseService`
-2. If the database is not found, throws error: `[database_showSchema] Database <databaseName> not found`
+2. If the database is not found, throws error:
+   `[database_showSchema] Database <databaseName> not found`
 3. Calls `showSchema()` on the database provider and returns the schema as JSON
 
-**Return Type:** `TokenRingToolJSONResult<any>` with type `'json'`
-
 **Example Response:**
+
 ```json
 {
   "type": "json",
   "data": {
-    "users": "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, active BOOLEAN)",
-    "posts": "CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT, content TEXT, user_id INTEGER)"
+    "users": "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)",
+    "posts": "CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT)"
   }
 }
 ```
@@ -182,7 +192,7 @@ Automatically provides agents with information about available databases.
 
 **Context Item Format:**
 
-```
+```text
 /* These are the databases available for the database tool */:
 - postgresql
 - mysql
@@ -190,10 +200,11 @@ Automatically provides agents with information about available databases.
 ```
 
 **Implementation Details:**
-- The context handler retrieves all registered database names from the `DatabaseService`
+
+- Retrieves all registered database names from the `DatabaseService`
 - If no databases are registered, no context item is yielded
-- The context handler is automatically registered when the plugin is installed with a database configuration
-- The context handler is required by both tools and must be present for tool execution
+- Automatically registered when the plugin is installed with database config
+- Required by both tools for tool execution
 
 ## Usage Examples
 
@@ -283,12 +294,7 @@ import databasePlugin from "@tokenring-ai/database";
 const app = new TokenRingApp();
 
 app.install(databasePlugin, {
-  database: {
-    providers: {
-      myPostgres: {},
-      myReadonlyDb: {}
-    }
-  }
+  database: {}
 });
 
 // Service, tools, and context handlers are now available
@@ -353,16 +359,17 @@ const packageConfigSchema = z.object({
   database: DatabaseConfigSchema.optional(),
 });
 
-export const DatabaseConfigSchema = z.object({
-  providers: z.record(z.string(), z.any())
-}).optional();
+export const DatabaseConfigSchema = z.object({}).optional();
 ```
 
-**Note:** The `DatabaseConfigSchema` is exported from `@tokenring-ai/database` and can be imported for type-safe configuration.
+**Note:** The `DatabaseConfigSchema` is exported from
+`@tokenring-ai/database` and can be imported for type-safe configuration.
 
 ### Configuration Example
 
-The plugin accepts a configuration object with a `database.providers` record, but this is only used to signal that the plugin should be activated. The actual database provider instantiation and registration must be done manually by the implementer.
+The plugin accepts a configuration object with a `database` property, which is
+used to signal that the plugin should be activated. The actual database provider
+instantiation and registration must be done manually by the implementer.
 
 ```typescript
 import TokenRingApp from "@tokenring-ai/app";
@@ -374,11 +381,7 @@ const app = new TokenRingApp();
 
 // Install plugin with database configuration to activate the service
 app.install(databasePlugin, {
-  database: {
-    providers: {
-      production: {} // Configuration signals activation
-    }
-  }
+  database: {} // Empty config signals activation
 });
 
 // Manually register database providers with the service
@@ -391,11 +394,14 @@ app.waitForService(DatabaseService, dbService => {
 });
 ```
 
-**Important:** The plugin does not automatically instantiate database providers from configuration. The configuration object serves two purposes:
+**Important:** The plugin does not automatically instantiate database providers
+from configuration. The configuration object serves two purposes:
+
 1. It signals that the plugin should be activated
 2. It triggers the registration of the `DatabaseService`
 
-Implementers must manually create and register database provider instances with the service after installation. The configuration record keys (`providers`) can be used as a reference for database names, but no actual provider instantiation occurs automatically.
+Implementers must manually create and register database provider instances with
+the service after installation.
 
 ## Integration
 
@@ -410,15 +416,14 @@ import databasePlugin from "@tokenring-ai/database";
 const app = new TokenRingApp();
 
 app.install(databasePlugin, {
-  database: {
-    providers: {}
-  }
+  database: {}
 });
 ```
 
 ### Service Registration
 
-The `DatabaseService` is registered when the plugin is installed with a database configuration. The plugin follows this installation flow:
+The `DatabaseService` is registered when the plugin is installed with a database
+configuration. The plugin follows this installation flow:
 
 ```typescript
 export default {
@@ -441,22 +446,30 @@ export default {
 ```
 
 **Important Notes:**
-- The `DatabaseService` is registered when the plugin is installed with a `database` configuration
+
+- The `DatabaseService` is registered when the plugin is installed with a
+  `database` configuration
 - The `DatabaseService` is added to the app immediately during plugin installation
-- Tools and context handlers are registered asynchronously after the `ChatService` is available via `waitForService`
-- The plugin does not instantiate database providers - this must be done manually by the implementer
-- Providers must be registered with the `DatabaseService` after the plugin is installed
+- Tools and context handlers are registered asynchronously after the
+  `ChatService` is available via `waitForService`
+- The plugin does not instantiate database providers - this must be done
+  manually by the implementer
+- Providers must be registered with the `DatabaseService` after the plugin is
+  installed
 
 ### Tool Registration
 
 The plugin automatically registers two tools with the ChatService:
 
-- `database_executeSql` - SQL execution tool
-- `database_showSchema` - Schema inspection tool
+| Tool Name             | Description              |
+| --------------------- | ------------------------ |
+| `database_executeSql` | SQL execution tool       |
+| `database_showSchema` | Schema inspection tool   |
 
 ### Context Handler Registration
 
-The plugin automatically registers the `available-databases` context handler with the ChatService.
+The plugin automatically registers the `available-databases` context handler
+with the ChatService.
 
 ## Package Exports
 
@@ -472,12 +485,15 @@ The package provides the following exports via its `package.json`:
 ```
 
 **Main Export (`@tokenring-ai/database`):**
+
 From `index.ts`:
+
 - `DatabaseConfigSchema` - Zod schema for plugin configuration
 - `DatabaseProvider` - Abstract base class for database providers
 - `DatabaseService` - Main service class for managing database providers
 
 **Direct Imports (available via `./*` pattern):**
+
 - `@tokenring-ai/database/DatabaseService` - Direct import of DatabaseService
 - `@tokenring-ai/database/DatabaseProvider` - Direct import of DatabaseProvider
 - `@tokenring-ai/database/plugin` - Plugin definition
@@ -486,35 +502,69 @@ From `index.ts`:
 
 ## RPC Endpoints
 
-This package does not define RPC endpoints. Database operations are performed through the agent tool system.
+This package does not define RPC endpoints. Database operations are performed
+through the agent tool system.
 
 ## State Management
 
-This package does not define state slices. Database providers manage their own connection state.
+This package does not define state slices. Database providers manage their own
+connection state.
 
 ## Best Practices
 
-- **Singleton Pattern**: Always handle database connections in a singleton pattern to prevent multiple connections to the same database
-- **Parameterized Queries**: Use parameterized queries to prevent SQL injection attacks
-- **Write Protection**: Use the `allowWrites` flag to restrict write operations. Non-SELECT queries automatically require human confirmation via `agent.askForApproval()`
-- **Error Handling**: Ensure proper error handling when executing database operations. Tool errors include descriptive messages for database not found and approval denial
-- **Connection Management**: Always release database connections to avoid resource leaks. Use try/finally patterns or connection pooling
-- **Schema Validation**: The `available-databases` context handler provides database names to agents. Tools validate database existence before execution
-- **Tool Usage**: Prefer using tools (`database_executeSql` and `database_showSchema`) for agent interactions. They include built-in safety checks and context handling
-- **Required Context Handlers**: The `available-databases` context handler is required by both tools. It is automatically registered when the plugin is installed with a database configuration and the ChatService is available
-- **Case-Sensitive SELECT Check**: The write protection check is case-sensitive. Only queries starting with uppercase "SELECT" bypass the approval requirement
-- **Provider Abstraction**: Implement custom providers for specific database systems (PostgreSQL, MySQL, SQLite, etc.) to maintain the abstraction layer
-- **Manual Provider Registration**: The plugin does not automatically instantiate providers from configuration. After installing the plugin, manually create and register provider instances:
+- **Singleton Pattern**: Always handle database connections in a singleton
+  pattern to prevent multiple connections to the same database
+
+- **Parameterized Queries**: Use parameterized queries to prevent SQL injection
+  attacks
+
+- **Write Protection**: Use the `allowWrites` flag to restrict write operations.
+  Non-SELECT queries automatically require human confirmation via
+  `agent.askForApproval()`
+
+- **Error Handling**: Ensure proper error handling when executing database
+  operations. Tool errors include descriptive messages for database not found
+  and approval denial
+
+- **Connection Management**: Always release database connections to avoid
+  resource leaks. Use try/finally patterns or connection pooling
+
+- **Schema Validation**: The `available-databases` context handler provides
+  database names to agents. Tools validate database existence before execution
+
+- **Tool Usage**: Prefer using tools (`database_executeSql` and
+  `database_showSchema`) for agent interactions. They include built-in safety
+  checks and context handling
+
+- **Required Context Handlers**: The `available-databases` context handler is
+  required by both tools. It is automatically registered when the plugin is
+  installed with a database configuration and the ChatService is available
+
+- **Case-Sensitive SELECT Check**: The write protection check is case-sensitive.
+  Only queries starting with uppercase "SELECT" bypass the approval requirement
+
+- **Provider Abstraction**: Implement custom providers for specific database
+  systems (PostgreSQL, MySQL, SQLite, etc.) to maintain the abstraction layer
+
+- **Manual Provider Registration**: The plugin does not automatically
+  instantiate providers from configuration. After installing the plugin,
+  manually create and register provider instances:
 
   ```typescript
-  app.install(databasePlugin, { database: { providers: { mydb: {} } } });
+  app.install(databasePlugin, { database: {} });
   app.waitForService(DatabaseService, dbService => {
     const provider = new MyCustomProvider(config);
     dbService.registerDatabase('mydb', provider);
   });
   ```
-- **Service Availability**: The `DatabaseService` is available immediately after plugin installation. Tools and context handlers are registered after `ChatService` is available
-- **Tool Execution Flow**: Tools retrieve the database from `DatabaseService`, perform safety checks (approval for writes), then execute the operation and return JSON results
+
+- **Service Availability**: The `DatabaseService` is available immediately after
+  plugin installation. Tools and context handlers are registered after
+  `ChatService` is available
+
+- **Tool Execution Flow**: Tools retrieve the database from `DatabaseService`,
+  perform safety checks (approval for writes), then execute the operation and
+  return JSON results
 
 ## Testing
 
@@ -635,19 +685,21 @@ describe('executeSql tool', () => {
 
 ### Production Dependencies
 
-From `package.json`:
-
-- `@tokenring-ai/app`: Base application framework and plugin system
-- `@tokenring-ai/chat`: Chat service for tool and context handler registration
-- `@tokenring-ai/agent`: Agent framework for tool execution
-- `@tokenring-ai/utility`: Shared utilities including KeyedRegistry for registry pattern
-- `zod`: Runtime type validation for configuration and tool inputs (^4.3.6)
+| Package                    | Version | Description                                      |
+| -------------------------- | ------- | ------------------------------------------------ |
+| `@tokenring-ai/app`        | 0.2.0   | Base application framework and plugin system     |
+| `@tokenring-ai/chat`       | 0.2.0   | Chat service for tool registration               |
+| `@tokenring-ai/agent`      | 0.2.0   | Agent framework for tool execution               |
+| `@tokenring-ai/utility`    | 0.2.0   | Shared utilities including KeyedRegistry         |
+| `zod`                      | ^4.3.6  | Runtime type validation                          |
 
 ### Development Dependencies
 
-- `bun-types`: TypeScript definitions for Bun (^1.3.11)
-- `vitest`: Unit testing framework (^4.1.1)
-- `typescript`: TypeScript compiler (^6.0.2)
+| Package         | Version | Description                    |
+| --------------- | ------- | ------------------------------ |
+| `bun-types`     | ^1.3.11 | TypeScript definitions for Bun |
+| `vitest`        | ^4.1.1  | Unit testing framework         |
+| `typescript`    | ^6.0.2  | TypeScript compiler            |
 
 ## Related Components
 
@@ -662,11 +714,13 @@ From `package.json`:
 
 Concrete database provider implementations that extend `DatabaseProvider`:
 
-- `@tokenring-ai/drizzle-storage`: Drizzle ORM-based storage implementation
-- `@tokenring-ai/sqlite-storage`: SQLite database storage implementation
-- `@tokenring-ai/mysql`: MySQL database provider implementation (if available)
+- `@tokenring-ai/drizzle-storage`: Drizzle ORM-based storage
+- `@tokenring-ai/sqlite-storage`: SQLite database storage
+- `@tokenring-ai/mysql`: MySQL database provider (if available)
 
-Note: These packages implement the `DatabaseProvider` interface to provide concrete database functionality while leveraging the abstract service layer provided by this package.
+Note: These packages implement the `DatabaseProvider` interface to provide
+concrete database functionality while leveraging the abstract service layer
+provided by this package.
 
 ## License
 

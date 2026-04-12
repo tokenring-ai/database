@@ -1,4 +1,4 @@
-import type {ContextHandlerOptions, ContextItem,} from "@tokenring-ai/chat/schema";
+import type {ContextHandlerOptions, ContextItem} from "@tokenring-ai/chat/schema";
 import DatabaseService from "../DatabaseService.ts";
 
 export default function* getContextItems({
