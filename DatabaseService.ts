@@ -7,7 +7,7 @@ export default class DatabaseService implements TokenRingService {
   description = "Database service";
   databases = new KeyedRegistry<DatabaseProvider>();
 
-  registerDatabase = this.databases.register;
-  getDatabaseByName = this.databases.getItemByName;
-  getAvailableDatabases = this.databases.getAllItemNames;
+  registerDatabase = this.databases.set;
+  getDatabaseByName = this.databases.get;
+  getAvailableDatabases = this.databases.keysArray;
 }

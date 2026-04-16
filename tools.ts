@@ -1,7 +1,7 @@
 import executeSql from "./tools/executeSql.ts";
 import showSchema from "./tools/showSchema.ts";
 
-export default {
+export default [
   executeSql,
   showSchema,
-};
+];

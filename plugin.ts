@@ -19,7 +19,7 @@ export default {
   install(app, config) {
     if (config.database) {
       app.waitForService(ChatService, (chatService) => {
-        chatService.addTools(tools);
+        chatService.addTools(...tools);
         chatService.registerContextHandlers(contextHandlers);
       });
       app.addServices(new DatabaseService());
