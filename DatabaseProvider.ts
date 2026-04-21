@@ -1,5 +1,5 @@
 export interface DatabaseProviderOptions {
-  allowWrites?: boolean;
+  allowWrites?: boolean | undefined;
 }
 
 export interface ExecuteSqlResult {
@@ -8,8 +8,7 @@ export interface ExecuteSqlResult {
 }
 
 export default class DatabaseProvider {
-  constructor(private allowWrites: boolean = false) {
-  }
+  constructor(private allowWrites: boolean = false) {}
 
   /**
    * Executes an SQL query.

@@ -1,21 +1,16 @@
 import type Agent from "@tokenring-ai/agent/Agent";
-import type {TokenRingToolDefinition, TokenRingToolResult} from "@tokenring-ai/chat/schema";
-import {z} from "zod";
+import type { TokenRingToolDefinition, TokenRingToolResult } from "@tokenring-ai/chat/schema";
+import { z } from "zod";
 import DatabaseService from "../DatabaseService.ts";
 
 // Export the tool name in the required format
 const name = "database_executeSql";
 const displayName = "Database/executeSql";
 
-async function execute(
-  {databaseName, sqlQuery}: z.output<typeof inputSchema>,
-  agent: Agent,
-): Promise<TokenRingToolResult> {
+async function execute({ databaseName, sqlQuery }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
   const databaseService = agent.requireServiceByType(DatabaseService);
 
-  const databaseResource = databaseService.getDatabaseByName(
-    databaseName || "",
-  );
+  const databaseResource = databaseService.getDatabaseByName(databaseName || "");
   if (!databaseResource) {
     throw new Error(`[${name}] Database ${databaseName} not found`);
   }
@@ -37,12 +32,7 @@ const description =
   "Executes an arbitrary SQL query on a database using the DatabaseResource. WARNING: Use with extreme caution as this can modify or delete data.";
 
 const inputSchema = z.object({
-  databaseName: z
-    .string()
-    .optional()
-    .describe(
-      "Optional: The name of the database to target. May also be specified in the SQL query.",
-    ),
+  databaseName: z.string().exactOptional().describe("Optional: The name of the database to target. May also be specified in the SQL query."),
   sqlQuery: z.string().describe("The SQL query to execute."),
 });
 

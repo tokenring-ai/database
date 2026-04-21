@@ -1,4 +1,4 @@
-import type {TokenRingService} from "@tokenring-ai/app/types";
+import type { TokenRingService } from "@tokenring-ai/app/types";
 import KeyedRegistry from "@tokenring-ai/utility/registry/KeyedRegistry";
 import type DatabaseProvider from "./DatabaseProvider.ts";
 
