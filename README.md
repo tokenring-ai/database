@@ -39,18 +39,18 @@ a registry of `DatabaseProvider` instances using the `KeyedRegistry` from
 
 **Service Properties:**
 
-| Property    | Type                          | Description              |
-| ----------- | ----------------------------- | ------------------------ |
-| `name`      | `string`                      | Service identifier       |
-| `description` | `string`                    | Service description      |
-| `databases` | `KeyedRegistry<DatabaseProvider>` | Database provider registry |
+| Property      | Type                              | Description                |
+|---------------|-----------------------------------|----------------------------|
+| `name`        | `string`                          | Service identifier         |
+| `description` | `string`                          | Service description        |
+| `databases`   | `KeyedRegistry<DatabaseProvider>` | Database provider registry |
 
 **Resource Management Methods:**
 
 ```typescript
-registerDatabase = this.databases.register
-getDatabaseByName = this.databases.getItemByName
-getAvailableDatabases = this.databases.getAllItemNames
+registerDatabase = this.databases.set
+getDatabaseByName = this.databases.get
+getAvailableDatabases = this.databases.keysArray
 ```
 
 These methods are exposed as arrow functions that delegate to the underlying
@@ -99,17 +99,17 @@ throw errors. Concrete implementations must override both methods.
 Executes an arbitrary SQL query on a database. WARNING: Use with extreme caution
 as this can modify or delete data.
 
-| Property        | Value                    |
-| --------------- | ------------------------ |
-| `name`          | `"database_executeSql"`  |
-| `displayName`   | `"Database/executeSql"`  |
+| Property      | Value                   |
+|---------------|-------------------------|
+| `name`        | `"database_executeSql"` |
+| `displayName` | `"Database/executeSql"` |
 
 **Input Schema:**
 
 ```typescript
 z.object({
-  databaseName: z.string().optional()
-    .describe("Optional: The name of the database to target."),
+  databaseName: z.string().exactOptional()
+    .describe("Optional: The name of the database to target. May also be specified in the SQL query."),
   sqlQuery: z.string().describe("The SQL query to execute.")
 })
 ```
@@ -149,10 +149,10 @@ z.object({
 Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the
 specified database.
 
-| Property        | Value                    |
-| --------------- | ------------------------ |
-| `name`          | `"database_showSchema"`  |
-| `displayName`   | `"Database/showSchema"`  |
+| Property      | Value                   |
+|---------------|-------------------------|
+| `name`        | `"database_showSchema"` |
+| `displayName` | `"Database/showSchema"` |
 
 **Input Schema:**
 
@@ -356,10 +356,10 @@ The plugin configuration uses a Zod schema for validation:
 
 ```typescript
 const packageConfigSchema = z.object({
-  database: DatabaseConfigSchema.optional(),
+  database: DatabaseConfigSchema.exactOptional(),
 });
 
-export const DatabaseConfigSchema = z.object({}).optional();
+export const DatabaseConfigSchema = z.object({}).exactOptional();
 ```
 
 **Note:** The `DatabaseConfigSchema` is exported from
@@ -429,7 +429,7 @@ configuration. The plugin follows this installation flow:
 export default {
   name: "@tokenring-ai/database",
   version: "0.2.0",
-  description: "Abstract database resources and interfaces",
+  description: "Abstract SQL interface for schema inspection and query execution across providers.",
   install(app, config) {
     if (config.database) {
       // Wait for ChatService then register tools and context handlers
@@ -461,10 +461,10 @@ export default {
 
 The plugin automatically registers two tools with the ChatService:
 
-| Tool Name             | Description              |
-| --------------------- | ------------------------ |
-| `database_executeSql` | SQL execution tool       |
-| `database_showSchema` | Schema inspection tool   |
+| Tool Name             | Description            |
+|-----------------------|------------------------|
+| `database_executeSql` | SQL execution tool     |
+| `database_showSchema` | Schema inspection tool |
 
 ### Context Handler Registration
 
@@ -685,21 +685,20 @@ describe('executeSql tool', () => {
 
 ### Production Dependencies
 
-| Package                    | Version | Description                                      |
-| -------------------------- | ------- | ------------------------------------------------ |
-| `@tokenring-ai/app`        | 0.2.0   | Base application framework and plugin system     |
-| `@tokenring-ai/chat`       | 0.2.0   | Chat service for tool registration               |
-| `@tokenring-ai/agent`      | 0.2.0   | Agent framework for tool execution               |
-| `@tokenring-ai/utility`    | 0.2.0   | Shared utilities including KeyedRegistry         |
-| `zod`                      | ^4.3.6  | Runtime type validation                          |
+| Package                 | Version | Description                                  |
+|-------------------------|---------|----------------------------------------------|
+| `@tokenring-ai/app`     | 0.2.0   | Base application framework and plugin system |
+| `@tokenring-ai/chat`    | 0.2.0   | Chat service for tool registration           |
+| `@tokenring-ai/agent`   | 0.2.0   | Agent framework for tool execution           |
+| `@tokenring-ai/utility` | 0.2.0   | Shared utilities including KeyedRegistry     |
+| `zod`                   | ^4.3.6  | Runtime type validation                      |
 
 ### Development Dependencies
 
-| Package         | Version | Description                    |
-| --------------- | ------- | ------------------------------ |
-| `bun-types`     | ^1.3.11 | TypeScript definitions for Bun |
-| `vitest`        | ^4.1.1  | Unit testing framework         |
-| `typescript`    | ^6.0.2  | TypeScript compiler            |
+| Package      | Version | Description                    |
+|--------------|---------|--------------------------------|
+| `vitest`     | ^4.1.1  | Unit testing framework         |
+| `typescript` | ^6.0.2  | TypeScript compiler            |
 
 ## Related Components
 
