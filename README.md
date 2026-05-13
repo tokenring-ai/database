@@ -695,10 +695,10 @@ describe('executeSql tool', () => {
 
 ### Development Dependencies
 
-| Package      | Version | Description                    |
-|--------------|---------|--------------------------------|
-| `vitest`     | ^4.1.1  | Unit testing framework         |
-| `typescript` | ^6.0.2  | TypeScript compiler            |
+| Package      | Version | Description            |
+|--------------|---------|------------------------|
+| `vitest`     | ^4.1.1  | Unit testing framework |
+| `typescript` | ^6.0.2  | TypeScript compiler    |
 
 ## Related Components
 

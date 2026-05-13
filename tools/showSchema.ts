@@ -5,6 +5,7 @@ import DatabaseService from "../DatabaseService.ts";
 
 const name = "database_showSchema";
 const displayName = "Database/showSchema";
+
 async function execute({ databaseName }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
   const databaseService = agent.requireServiceByType(DatabaseService);
 
