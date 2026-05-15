@@ -121,7 +121,7 @@ z.object({
 1. Retrieves the target database from the `DatabaseService`
 2. If the query does not start with "SELECT" (case-sensitive), requests human
    approval via `agent.askForApproval()`
-3. If approval is denied, throws error: "User did not approve the SQL query."
+3. If approval is denied, throws error: "User did not approve the SQL query that was provided."
 4. If the database is not found, throws error:
    `[database_executeSql] Database <databaseName> not found`
 5. Executes the SQL query and returns results as JSON
@@ -428,6 +428,7 @@ configuration. The plugin follows this installation flow:
 ```typescript
 export default {
   name: "@tokenring-ai/database",
+  displayName: "Database Layer",
   version: "0.2.0",
   description: "Abstract SQL interface for schema inspection and query execution across providers.",
   install(app, config) {
