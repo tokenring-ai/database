@@ -127,21 +127,21 @@ z.object({
 
 **Behavior:**
 
-1. Retrieves the target database from the `DatabaseService`
-2. If `databaseName` is not provided, falls back to an empty string `""` as
-   the lookup key
+1. Retrieves the target database from the `DatabaseService` using `databaseName`
+   or an empty string `""` if not provided
+2. If the database is not found, throws `ToolCallError`:
+   `"Database ${databaseName} not found"`
 3. If the query does not start with `"SELECT"` (case-sensitive), requests human
-   approval via `agent.askForApproval()` with message object:
-   `{ message: \"Execute SQL write operation on database '${databaseName}'?\\n\\nQuery: ${sqlQuery}\" }`
+   approval via `agent.askForApproval()` with message:
+   `"Execute SQL write operation on database '${databaseName}'?\n\nQuery: ${sqlQuery}"`
 4. If approval is denied, throws `ToolCallError`:
    `"User did not approve the SQL query that was provided."`
-5. If the database is not found, throws `ToolCallError`:
-   `"[database_executeSql] Database <databaseName> not found"`
-6. Executes the SQL query and returns the result as a JSON string via
+5. Executes the SQL query and returns the result as a JSON string via
    `JSON.stringify(result)`
 
-**Note:** The SELECT check is case-sensitive. Queries starting with `"select"`
-(lowercase) will also require approval.
+**Note:** The SELECT check is case-sensitive. Only queries starting with uppercase
+`"SELECT"` bypass the approval requirement. Queries starting with `"select"`
+(lowercase) will require approval.
 
 **Example Response:**
 
@@ -180,7 +180,7 @@ z.object({
 
 1. Retrieves the target database from the `DatabaseService`
 2. If the database is not found, throws `ToolCallError`:
-   `"[database_showSchema] Database <databaseName> not found"`
+   `"Database ${databaseName} not found"`
 3. Calls `showSchema()` on the database provider and returns the schema as a
    JSON string via `JSON.stringify(schema)`
 
@@ -223,7 +223,7 @@ Automatically provides agents with information about available databases.
 ### 1. Implementing a Concrete DatabaseProvider
 
 ```typescript
-import DatabaseProvider, { ExecuteSqlResult } from '@tokenring-ai/database';
+import DatabaseProvider, { type ExecuteSqlResult } from '@tokenring-ai/database';
 
 export class PostgresProvider extends DatabaseProvider {
   private pool: Pool;
@@ -487,6 +487,7 @@ export default {
   manually by the implementer
 - Providers must be registered with the `DatabaseService` after the plugin is
   installed
+- The `DatabaseService` is available immediately after plugin installation
 
 ### Tool Registration
 
@@ -497,10 +498,10 @@ exported as an array from `tools.ts` and spread when added:
 chatService.addTools(...tools);
 ```
 
-| Tool Name             | Description            |
-|-----------------------|------------------------|
-| `database_executeSql` | SQL execution tool     |
-| `database_showSchema` | Schema inspection tool |
+| Tool Name             | Description                                    |
+|-----------------------|------------------------------------------------|
+| `database_executeSql` | Execute arbitrary SQL queries on a database    |
+| `database_showSchema` | Show CREATE TABLE statements for all tables    |
 
 ### Context Handler Registration
 
@@ -542,6 +543,9 @@ From `index.ts`:
 - `@tokenring-ai/database/plugin` - Plugin definition
 - `@tokenring-ai/database/tools` - Tool definitions (exported as array)
 - `@tokenring-ai/database/contextHandlers` - Context handler definitions
+- `@tokenring-ai/database/tools/executeSql` - SQL execution tool
+- `@tokenring-ai/database/tools/showSchema` - Schema inspection tool
+- `@tokenring-ai/database/contextHandlers/availableDatabases` - Available databases context handler
 
 **Note:** The package uses TypeScript source files directly. The `package.json`
 exports pattern `"./*": "./*.ts"` allows direct imports of any `.ts` file in the
@@ -565,9 +569,9 @@ connection state.
 - **Parameterized Queries**: Use parameterized queries to prevent SQL injection
   attacks
 
-- **Write Protection**: Use the `allowWrites` flag to restrict write operations.
-  Non-SELECT queries automatically require human confirmation via
-  `agent.askForApproval()`
+- **Write Protection**: Non-SELECT queries automatically require human
+  confirmation via `agent.askForApproval()`. The `allowWrites` flag on the
+  `DatabaseProvider` can be used to control write permissions at the provider level
 
 - **Error Handling**: Ensure proper error handling when executing database
   operations. Tools use `ToolCallError` from
@@ -588,7 +592,8 @@ connection state.
   installed with a database configuration and the ChatService is available
 
 - **Case-Sensitive SELECT Check**: The write protection check is case-sensitive.
-  Only queries starting with uppercase `"SELECT"` bypass the approval requirement
+  Only queries starting with uppercase `"SELECT"` bypass the approval requirement.
+  Queries starting with `"select"` (lowercase) will require approval
 
 - **Provider Abstraction**: Implement custom providers for specific database
   systems (PostgreSQL, MySQL, SQLite, etc.) to maintain the abstraction layer
@@ -607,11 +612,16 @@ connection state.
 
 - **Service Availability**: The `DatabaseService` is available immediately after
   plugin installation. Tools and context handlers are registered after
-  `ChatService` is available
+  `ChatService` is available via `waitForService`
 
 - **Tool Execution Flow**: Tools retrieve the database from `DatabaseService`,
-  perform safety checks (approval for writes), then execute the operation and
-  return results as JSON strings via `JSON.stringify()`
+  validate database existence, perform safety checks (approval for writes), then
+  execute the operation and return results as JSON strings via `JSON.stringify()`
+
+- **Optional Database Name**: The `database_executeSql` tool accepts an optional
+  `databaseName` parameter. If not provided, it falls back to an empty string
+  `""` as the lookup key. Consider always providing the database name explicitly
+  for clarity
 
 ## Testing
 
@@ -739,9 +749,6 @@ describe('executeSql tool', () => {
 | `@tokenring-ai/agent`   | workspace | Agent framework for tool execution         |
 | `@tokenring-ai/utility` | workspace | Shared utilities including KeyedRegistry   |
 | `zod`                   | ^4.4.3    | Runtime type validation                    |
-
-**Note:** The `@tokenring-ai/chat` dependency is listed in package.json and is
-required for tool and context handler definitions.
 
 ### Development Dependencies
 
