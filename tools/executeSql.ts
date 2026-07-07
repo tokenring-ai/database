@@ -1,5 +1,6 @@
 import type Agent from "@tokenring-ai/agent/Agent";
 import type { TokenRingToolDefinition, TokenRingToolResult } from "@tokenring-ai/chat/schema";
+import { ToolCallError } from "@tokenring-ai/chat/util/tokenRingTool";
 import { z } from "zod";
 import DatabaseService from "../DatabaseService.ts";
 
@@ -12,7 +13,7 @@ async function execute({ databaseName, sqlQuery }: z.output<typeof inputSchema>,
 
   const databaseResource = databaseService.getDatabaseByName(databaseName || "");
   if (!databaseResource) {
-    throw new Error(`[${name}] Database ${databaseName} not found`);
+    throw new ToolCallError(name, `Database ${databaseName} not found`);
   }
 
   if (!sqlQuery.trim().startsWith("SELECT")) {
@@ -21,7 +22,7 @@ async function execute({ databaseName, sqlQuery }: z.output<typeof inputSchema>,
     });
 
     if (!approved) {
-      throw new Error("User did not approve the SQL query that was provided.");
+      throw new ToolCallError(name, "User did not approve the SQL query that was provided.");
     }
   }
   const result = await databaseResource.executeSql(sqlQuery);

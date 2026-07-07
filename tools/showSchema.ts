@@ -1,5 +1,6 @@
 import type Agent from "@tokenring-ai/agent/Agent";
 import type { TokenRingToolDefinition, TokenRingToolResult } from "@tokenring-ai/chat/schema";
+import { ToolCallError } from "@tokenring-ai/chat/util/tokenRingTool";
 import { z } from "zod";
 import DatabaseService from "../DatabaseService.ts";
 
@@ -11,7 +12,7 @@ async function execute({ databaseName }: z.output<typeof inputSchema>, agent: Ag
 
   const databaseResource = databaseService.getDatabaseByName(databaseName);
   if (!databaseResource) {
-    throw new Error(`[${name}] Database ${databaseName} not found`);
+    throw new ToolCallError(name, `Database ${databaseName} not found`);
   }
   const schema = await databaseResource.showSchema();
   return JSON.stringify(schema);
