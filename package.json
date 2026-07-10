@@ -10,17 +10,16 @@
     "@tokenring-ai/utility": "workspace:*"
   },
   "devDependencies": {
-    "vitest": "^4.1.1",
     "typescript": "^6.0.2"
   },
   "main": "index.ts",
   "type": "module",
   "scripts": {
     "eslint": "eslint --fix ./",
-    "test": "vitest run",
+    "test": "bun test",
     "build": "tsc --noEmit",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage"
   },
   "exports": {
     ".": "./index.ts",
