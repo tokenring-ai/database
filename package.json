@@ -15,7 +15,6 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
-    "eslint": "eslint --fix ./",
     "test": "bun test",
     "build": "tsc --noEmit",
     "test:watch": "bun test --watch",
