@@ -15,7 +15,10 @@ async function execute({ databaseName }: z.output<typeof inputSchema>, agent: Ag
     throw new ToolCallError(name, `Database ${databaseName} not found`);
   }
   const schema = await databaseResource.showSchema();
-  return JSON.stringify(schema);
+  return {
+    message: `**Database** Viewed schema for ${databaseName}`,
+    result: JSON.stringify(schema),
+  };
 }
 
 const description = "Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database.";

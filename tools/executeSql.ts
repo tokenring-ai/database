@@ -26,7 +26,10 @@ async function execute({ databaseName, sqlQuery }: z.output<typeof inputSchema>,
     }
   }
   const result = await databaseResource.executeSql(sqlQuery);
-  return JSON.stringify(result);
+  return {
+    message: `**Database** Executed SQL`,
+    result: JSON.stringify(result),
+  };
 }
 
 const description =
