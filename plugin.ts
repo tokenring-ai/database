@@ -25,5 +25,5 @@ export default {
       app.addServices(new DatabaseService());
     }
   },
-  config: packageConfigSchema,
+  configSchema: packageConfigSchema,
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;
