@@ -38,15 +38,15 @@ tools.
 
 ## Tools
 
-| Tool Name             | Display Name        | Description                                  |
-|-----------------------|---------------------|----------------------------------------------|
-| `database_executeSql` | Database/executeSql | Execute arbitrary SQL queries on a database  |
-| `database_showSchema` | Database/showSchema | Show CREATE TABLE statements for all tables  |
+| Tool Name             | Display Name        | Description                                                                  |
+|-----------------------|---------------------|------------------------------------------------------------------------------|
+| `database_executeSql` | Database/executeSql | Executes an arbitrary SQL query on a database. WARNING: Use with extreme caution as this can modify or delete data. |
+| `database_showSchema` | Database/showSchema | Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database. |
 
 ### database_executeSql
 
-Executes an arbitrary SQL query on a database. WARNING: Use with extreme
-caution as this can modify or delete data.
+Executes an arbitrary SQL query on a database using the DatabaseResource.
+WARNING: Use with extreme caution as this can modify or delete data.
 
 **Input Schema:**
 
@@ -72,6 +72,17 @@ z.object({
    `"User did not approve the SQL query that was provided."`
 5. Executes the SQL query and returns the result as a JSON string
 
+**Result Format:**
+
+The tool returns an `ExecuteSqlResult` serialized as JSON:
+
+```typescript
+interface ExecuteSqlResult {
+  rows: Record<string, string | number | null>[];
+  fields: string[];
+}
+```
+
 ### database_showSchema
 
 Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the
@@ -95,6 +106,11 @@ z.object({
    `"Database ${databaseName} not found"`
 3. Calls `showSchema()` on the database provider and returns the schema as a
    JSON string
+
+**Result Format:**
+
+The tool returns a `Record<string, string>` mapping table names to their
+CREATE TABLE statements, serialized as JSON.
 
 ## Configuration
 
@@ -155,6 +171,46 @@ from configuration. The configuration object serves two purposes:
 
 Implementers must manually create and register database provider instances with
 the service after installation.
+
+## Extending DatabaseProvider
+
+To support a specific database system, extend the `DatabaseProvider` class and
+implement the required methods:
+
+```typescript
+import DatabaseProvider, { ExecuteSqlResult } from "@tokenring-ai/database";
+
+class MyDatabaseProvider extends DatabaseProvider {
+  constructor(allowWrites: boolean = false) {
+    super(allowWrites);
+  }
+
+  async executeSql(sqlQuery: string): Promise<ExecuteSqlResult> {
+    // Implement database-specific SQL execution
+    // Return result with rows and fields
+    throw new Error("Not implemented");
+  }
+
+  async showSchema(): Promise<Record<string, string>> {
+    // Implement database-specific schema inspection
+    // Return record mapping table names to CREATE TABLE statements
+    throw new Error("Not implemented");
+  }
+}
+```
+
+### DatabaseProvider Options
+
+| Option        | Type                  | Description                                    |
+|---------------|-----------------------|------------------------------------------------|
+| `allowWrites` | `boolean \| undefined` | When true, allows write operations without additional checks |
+
+### ExecuteSqlResult Interface
+
+| Property | Type                                        | Description                              |
+|----------|---------------------------------------------|------------------------------------------|
+| `rows`   | `Record<string, string \| number \| null>[]` | Array of result rows as key-value pairs  |
+| `fields` | `string[]`                                  | Array of column/field names              |
 
 ## License
 
