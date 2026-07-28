@@ -1,22 +1,29 @@
 import type Agent from "@tokenring-ai/agent/Agent";
 import type { TokenRingToolDefinition, TokenRingToolResult } from "@tokenring-ai/chat/schema";
-import { ToolCallError } from "@tokenring-ai/chat/util/tokenRingTool";
+import markdownList from "@tokenring-ai/utility/string/markdownList";
 import { z } from "zod";
 import DatabaseService from "../DatabaseService.ts";
 
 const name = "database_showSchema";
 const displayName = "Database/showSchema";
 
-async function execute({ databaseName }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
+async function execute({ datasource: dataSourceName }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
   const databaseService = agent.requireServiceByType(DatabaseService);
 
-  const databaseResource = databaseService.getDatabaseByName(databaseName);
-  if (!databaseResource) {
-    throw new ToolCallError(name, `Database ${databaseName} not found`);
+  const datasource = databaseService.getDataSource(dataSourceName);
+  if (!datasource) {
+    return {
+      failed: true,
+      message: `**Database** Error while running showSchema: Incorrect datasource value`,
+      result: `No datasource named ${dataSourceName} found. Currently available datasources:
+${markdownList(databaseService.getDatasourceNames())}
+    `,
+    };
   }
-  const schema = await databaseResource.showSchema();
+
+  const schema = await datasource.showSchema();
   return {
-    message: `**Database** Viewed schema for ${databaseName}`,
+    message: `**Database** Viewed schema for ${dataSourceName}`,
     result: JSON.stringify(schema),
   };
 }
@@ -24,10 +31,10 @@ async function execute({ databaseName }: z.output<typeof inputSchema>, agent: Ag
 const description = "Shows the 'CREATE TABLE' statements (or equivalent) for all tables in the specified database.";
 
 const inputSchema = z.object({
-  databaseName: z.string().describe("The name of the database for which to show the schema."),
+  datasource: z.string().describe("The name of the datasource to target."),
 });
 
-const requiredContextHandlers = ["available-databases"];
+const requiredContextHandlers = ["datasources"];
 
 export default {
   name,

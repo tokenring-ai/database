@@ -9,7 +9,7 @@ unified `DatabaseService` that integrates with the TokenRing plugin system and
 agent framework.
 
 The package focuses on abstraction, requiring implementers to extend
-`DatabaseProvider` for specific database types. It supports tool-based
+`DataSource` for specific database types. It supports tool-based
 interaction with agents, context handlers for database availability injection,
 and write operation protection through human confirmation for non-SELECT
 queries.
@@ -174,7 +174,7 @@ the service after installation.
 
 ## Extending DatabaseProvider
 
-To support a specific database system, extend the `DatabaseProvider` class and
+To support a specific database system, extend the `DataSource` class and
 implement the required methods:
 
 ```typescript
