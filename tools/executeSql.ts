@@ -1,29 +1,28 @@
 import type Agent from "@tokenring-ai/agent/Agent";
 import type { TokenRingToolDefinition, TokenRingToolResult } from "@tokenring-ai/chat/schema";
 import { ToolCallError } from "@tokenring-ai/chat/util/tokenRingTool";
-import markdownList from "@tokenring-ai/utility/string/markdownList";
 import { z } from "zod";
-import DatabaseService from "../DatabaseService.ts";
+import isReadOnlyQuery from "../util/isReadOnlyQuery.ts";
+import { resolveDatasource } from "../util/resolveDatasource.ts";
 
 // Export the tool name in the required format
 const name = "database_executeSql";
 const displayName = "Database/executeSql";
 
 async function execute({ datasource: datasourceName, sqlQuery }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
-  const databaseService = agent.requireServiceByType(DatabaseService);
+  const resolved = resolveDatasource(datasourceName, "executeSql", agent);
+  if (resolved.failure) return resolved.failure;
+  const { datasource, service } = resolved;
 
-  const datasource = databaseService.getDataSource(datasourceName);
-  if (!datasource) {
-    return {
-      failed: true,
-      message: `**Database** Error while running showSchema: Incorrect datasource value`,
-      result: `No datasource named ${datasourceName} found. Currently available datasources:
-${markdownList(databaseService.getDatasourceNames())}
-    `,
-    };
-  }
+  if (!isReadOnlyQuery(sqlQuery)) {
+    if (!service.getDataSourceConfig(datasourceName)?.allowWrites) {
+      return {
+        failed: true,
+        message: `**Database** Refused write on read-only datasource '${datasourceName}'`,
+        result: `The datasource '${datasourceName}' is configured with allowWrites: false, so only read queries may be run against it. Ask the user to enable writes for this datasource if the change is intended.`,
+      };
+    }
 
-  if (!sqlQuery.trim().startsWith("SELECT")) {
     const approved = await agent.askForApproval({
       message: `Execute SQL write operation on datasource: '${datasourceName}'?\n\nQuery: ${sqlQuery}`,
     });
@@ -32,6 +31,7 @@ ${markdownList(databaseService.getDatasourceNames())}
       throw new ToolCallError(name, "User did not approve the SQL query that was provided.");
     }
   }
+
   const result = await datasource.executeSql(sqlQuery);
   return {
     message: `**Database** Executed SQL`,
@@ -40,7 +40,7 @@ ${markdownList(databaseService.getDatasourceNames())}
 }
 
 const description =
-  "Executes an arbitrary SQL query on a database using the DatabaseResource. WARNING: Use with extreme caution as this can modify or delete data.";
+  "Executes an arbitrary SQL query on a datasource. Prefer database_selectRows for simple lookups. WARNING: Use with extreme caution as this can modify or delete data.";
 
 const inputSchema = z.object({
   datasource: z.string().describe("The name of the datasource to target."),

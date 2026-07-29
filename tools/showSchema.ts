@@ -1,27 +1,16 @@
 import type Agent from "@tokenring-ai/agent/Agent";
 import type { TokenRingToolDefinition, TokenRingToolResult } from "@tokenring-ai/chat/schema";
-import markdownList from "@tokenring-ai/utility/string/markdownList";
 import { z } from "zod";
-import DatabaseService from "../DatabaseService.ts";
+import { resolveDatasource } from "../util/resolveDatasource.ts";
 
 const name = "database_showSchema";
 const displayName = "Database/showSchema";
 
 async function execute({ datasource: dataSourceName }: z.output<typeof inputSchema>, agent: Agent): Promise<TokenRingToolResult> {
-  const databaseService = agent.requireServiceByType(DatabaseService);
+  const resolved = resolveDatasource(dataSourceName, "showSchema", agent);
+  if (resolved.failure) return resolved.failure;
 
-  const datasource = databaseService.getDataSource(dataSourceName);
-  if (!datasource) {
-    return {
-      failed: true,
-      message: `**Database** Error while running showSchema: Incorrect datasource value`,
-      result: `No datasource named ${dataSourceName} found. Currently available datasources:
-${markdownList(databaseService.getDatasourceNames())}
-    `,
-    };
-  }
-
-  const schema = await datasource.showSchema();
+  const schema = await resolved.datasource.showSchema();
   return {
     message: `**Database** Viewed schema for ${dataSourceName}`,
     result: JSON.stringify(schema),

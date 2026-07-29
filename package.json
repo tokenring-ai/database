@@ -7,6 +7,9 @@
     "@tokenring-ai/chat": "workspace:*",
     "zod": "^4.4.3",
     "@tokenring-ai/agent": "workspace:*",
+    "@tokenring-ai/lifecycle": "workspace:*",
+    "@tokenring-ai/rpc": "workspace:*",
+    "@tokenring-ai/secrets": "workspace:*",
     "@tokenring-ai/utility": "workspace:*"
   },
   "devDependencies": {
