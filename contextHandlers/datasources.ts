@@ -4,7 +4,7 @@ import DatabaseService from "../DatabaseService.ts";
 import { DatabaseState } from "../state/DatabaseState.ts";
 
 export default function* getContextItems({ agent }: ContextHandlerOptions): Generator<ContextItem> {
-  const databaseService = agent.requireServiceByType(DatabaseService);
+  const databaseService = agent.requireService(DatabaseService);
   const available = databaseService.getDatasourceNames();
   if (available.length === 0) return;
 

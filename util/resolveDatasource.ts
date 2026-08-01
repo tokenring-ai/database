@@ -14,7 +14,7 @@ export function resolveDatasource(
   toolLabel: string,
   agent: Agent,
 ): { datasource: DataSource; service: DatabaseService; failure?: undefined } | { failure: TokenRingToolResult; datasource?: undefined; service?: undefined } {
-  const service = agent.requireServiceByType(DatabaseService);
+  const service = agent.requireService(DatabaseService);
   const datasource = service.getDataSource(datasourceName);
 
   if (!datasource) {

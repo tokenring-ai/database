@@ -26,8 +26,7 @@ export default {
   description: packageJSON.description,
   config,
   install(app) {
-    const databaseService = new DatabaseService();
-    app.addServices(databaseService);
+    const databaseService = app.addService(new DatabaseService());
 
     const mysqlProviderFactory = (options: DataSourceOptions) => new MySQLDatabaseProvider(options);
 
@@ -35,7 +34,7 @@ export default {
     databaseService.registerFactory("mariadb", mysqlProviderFactory);
 
     app.waitForService(ChatService, chatService => {
-      chatService.addTools(...tools);
+      chatService.addTools(tools);
       chatService.registerContextHandlers(contextHandlers);
     });
 
