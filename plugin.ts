@@ -3,6 +3,7 @@ import { ChatService } from "@tokenring-ai/chat";
 import { AgentLifecycleService } from "@tokenring-ai/lifecycle";
 import { RpcService } from "@tokenring-ai/rpc";
 import { resolveSecret } from "@tokenring-ai/secrets";
+import classFactory from "@tokenring-ai/utility/class/factory";
 import { z } from "zod";
 import config from "./config/index.ts";
 import contextHandlers from "./contextHandlers.ts";
@@ -13,7 +14,6 @@ import MySQLDatabaseProvider from "./providers/MySQLDatabaseProvider.ts";
 import databaseRPC from "./rpc/database.ts";
 import { DatabaseServiceConfigSchema, type ResolvedDatabaseServiceConfig } from "./schema.ts";
 import tools from "./tools.ts";
-import type { DataSourceOptions } from "./types.ts";
 
 const packageConfigSchema = z.object({
   database: DatabaseServiceConfigSchema,
@@ -28,10 +28,8 @@ export default {
   install(app) {
     const databaseService = app.addService(new DatabaseService());
 
-    const mysqlProviderFactory = (options: DataSourceOptions) => new MySQLDatabaseProvider(options);
-
-    databaseService.registerFactory("mysql", mysqlProviderFactory);
-    databaseService.registerFactory("mariadb", mysqlProviderFactory);
+    databaseService.registerFactory("mysql", classFactory(MySQLDatabaseProvider));
+    databaseService.registerFactory("mariadb", classFactory(MySQLDatabaseProvider));
 
     app.waitForService(ChatService, chatService => {
       chatService.addTools(tools);
