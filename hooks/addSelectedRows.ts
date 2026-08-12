@@ -1,4 +1,4 @@
-import { AfterInputReceived } from "@tokenring-ai/agent";
+import { BeforeInputReceived } from "@tokenring-ai/agent";
 import type Agent from "@tokenring-ai/agent/Agent";
 import type { HookSubscription } from "@tokenring-ai/lifecycle/types";
 import { HookCallback } from "@tokenring-ai/lifecycle/util/hooks";
@@ -35,7 +35,7 @@ function schemaToMarkdown(schema: TableSchema): string {
   return `### ${schema.table.name} (${schema.table.type})\n\n${header}\n${rows}${ddl}`;
 }
 
-async function addSelectedRows(data: AfterInputReceived, agent: Agent) {
+async function addSelectedRows(data: BeforeInputReceived, agent: Agent) {
   const attachments = (data.input.attachments ??= []);
 
   agent.mutateState(DatabaseState, state => {
@@ -84,7 +84,7 @@ async function addSelectedRows(data: AfterInputReceived, agent: Agent) {
   });
 }
 
-const callbacks = [new HookCallback(AfterInputReceived, addSelectedRows)];
+const callbacks = [new HookCallback(BeforeInputReceived, addSelectedRows)];
 
 export default {
   name,

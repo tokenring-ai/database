@@ -19,7 +19,7 @@ export class InvalidSelectRequestError extends Error {
 }
 
 export interface BuiltSelect {
-  /** `SELECT ... FROM ... [WHERE ...] [ORDER BY ...] LIMIT ? OFFSET ?` */
+  /** `SELECT ... FROM ... [WHERE ...] [ORDER BY ...] LIMIT … OFFSET …` */
   sql: string;
   params: CellValue[];
   /** `SELECT COUNT(*) AS total FROM ... [WHERE ...]` — same filters, no paging. */
@@ -35,11 +35,33 @@ export interface BuiltSelect {
 export interface BuildSelectOptions {
   /** How the dialect quotes an identifier. Defaults to MySQL backticks. */
   quoteIdentifier?: (name: string) => string;
+  /**
+   * How the FROM table is rendered. Defaults to `quoteIdentifier(request.table)`.
+   * Postgres providers use this for optional `schema.table` qualification.
+   */
+  quoteTable?: (table: string) => string;
+  /**
+   * Renders a bound-parameter placeholder. `index` is 0-based across the whole
+   * statement (WHERE values first, then LIMIT/OFFSET).
+   *
+   * Defaults to `?` (MySQL / SQLite). Postgres uses `(i) => \`$${i + 1}\``.
+   */
+  parameterPlaceholder?: (index: number) => string;
 }
 
 /** MySQL/MariaDB backtick quoting. The name is already validated; this is belt-and-braces. */
 function backtick(name: string): string {
   return `\`${name.replace(/`/g, "``")}\``;
+}
+
+/** PostgreSQL / SQLite double-quote identifier quoting. */
+export function doubleQuoteIdentifier(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** Postgres-style `$1`, `$2`, … placeholders (0-based index in, 1-based out). */
+export function dollarPlaceholder(index: number): string {
+  return `$${index + 1}`;
 }
 
 const operatorSql: Record<Exclude<FilterOperator, "in" | "isNull" | "isNotNull">, string> = {
@@ -54,6 +76,8 @@ const operatorSql: Record<Exclude<FilterOperator, "in" | "isNull" | "isNotNull">
 
 export default function buildSelect(request: SelectRowsRequest, columns: ColumnDef[], options: BuildSelectOptions = {}): BuiltSelect {
   const quote = options.quoteIdentifier ?? backtick;
+  const quoteTable = options.quoteTable ?? quote;
+  const placeholder = options.parameterPlaceholder ?? (() => "?");
 
   if (columns.length === 0) {
     throw new InvalidSelectRequestError(`Table "${request.table}" has no columns`);
@@ -70,11 +94,15 @@ export default function buildSelect(request: SelectRowsRequest, columns: ColumnD
   const fields = request.columns?.length ? request.columns.map(name => requireColumn(name, "column")) : columns.map(column => column.name);
 
   const selectList = fields.map(quote).join(", ");
-  const from = quote(request.table);
+  const from = quoteTable(request.table);
 
   // ─── WHERE ───
   const conditions: string[] = [];
   const whereParams: CellValue[] = [];
+  // Placeholders share one counter so Postgres `$n` numbers stay continuous
+  // through WHERE → LIMIT → OFFSET.
+  let nextParamIndex = 0;
+  const nextPlaceholder = (): string => placeholder(nextParamIndex++);
 
   for (const filter of request.filters ?? []) {
     const column = quote(requireColumn(filter.column, "filter column"));
@@ -93,7 +121,7 @@ export default function buildSelect(request: SelectRowsRequest, columns: ColumnD
           conditions.push("1 = 0");
           break;
         }
-        conditions.push(`${column} IN (${values.map(() => "?").join(", ")})`);
+        conditions.push(`${column} IN (${values.map(() => nextPlaceholder()).join(", ")})`);
         whereParams.push(...values);
         break;
       }
@@ -104,7 +132,7 @@ export default function buildSelect(request: SelectRowsRequest, columns: ColumnD
         if (Array.isArray(filter.value)) {
           throw new InvalidSelectRequestError(`Filter "${filter.column} ${filter.op}" takes a single value, not a list`);
         }
-        conditions.push(`${column} ${operatorSql[filter.op]} ?`);
+        conditions.push(`${column} ${operatorSql[filter.op]} ${nextPlaceholder()}`);
         whereParams.push(filter.value);
         break;
       }
@@ -124,9 +152,13 @@ export default function buildSelect(request: SelectRowsRequest, columns: ColumnD
   const limit = Math.min(Math.max(1, Math.trunc(request.limit)), MAX_ROW_LIMIT);
   const offset = Math.max(0, Math.trunc(request.offset));
 
+  const limitPlaceholder = nextPlaceholder();
+  const offsetPlaceholder = nextPlaceholder();
+
   return {
-    sql: `SELECT ${selectList} FROM ${from}${where}${orderByClause} LIMIT ? OFFSET ?`,
+    sql: `SELECT ${selectList} FROM ${from}${where}${orderByClause} LIMIT ${limitPlaceholder} OFFSET ${offsetPlaceholder}`,
     params: [...whereParams, limit, offset],
+    // Count query reuses the same WHERE placeholders starting at $1 / ?.
     countSql: `SELECT COUNT(*) AS total FROM ${from}${where}`,
     countParams: [...whereParams],
     fields,

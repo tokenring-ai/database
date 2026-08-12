@@ -37,10 +37,19 @@ describe("schemeOf", () => {
     // The bug this guards: factories register "mysql", URL.protocol yields "mysql:".
     expect(schemeOf("mysql://user:pw@host:3306/db")).toBe("mysql");
     expect(schemeOf("mariadb://host/db")).toBe("mariadb");
+    expect(schemeOf("postgres://host/db")).toBe("postgres");
+    expect(schemeOf("postgresql://host/db")).toBe("postgresql");
+    expect(schemeOf("sqlite:///tmp/data.db")).toBe("sqlite");
+    expect(schemeOf("file:///tmp/data.db")).toBe("file");
   });
 
   it("lowercases the scheme", () => {
     expect(schemeOf("MySQL://host/db")).toBe("mysql");
+  });
+
+  it("handles sqlite memory forms the WHATWG URL parser rejects", () => {
+    expect(schemeOf("sqlite://:memory:")).toBe("sqlite");
+    expect(schemeOf(":memory:")).toBe("sqlite");
   });
 
   it("throws on something that isn't a URL", () => {

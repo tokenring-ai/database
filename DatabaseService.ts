@@ -10,11 +10,20 @@ import type { DatabaseProviderFactory, DataSource, Row, TableSchema } from "./ty
 /**
  * Extracts the factory key from a connection string: `mysql://…` -> `mysql`.
  * `URL.protocol` keeps the trailing colon, which providers do not register with.
+ *
+ * Also accepts forms the WHATWG URL parser rejects but Bun's SQL client allows,
+ * notably `sqlite://:memory:` and a bare `:memory:` (treated as sqlite).
  */
 export function schemeOf(url: string): string {
+  const trimmed = url.trim();
+  if (trimmed === ":memory:") return "sqlite";
+
   try {
-    return new URL(url).protocol.replace(/:$/, "").toLowerCase();
+    return new URL(trimmed).protocol.replace(/:$/, "").toLowerCase();
   } catch {
+    // e.g. sqlite://:memory: — still has a scheme prefix we can read.
+    const match = trimmed.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
+    if (match?.[1]) return match[1].toLowerCase();
     throw new Error("Invalid connection string: could not parse a URL scheme from it");
   }
 }
@@ -33,10 +42,16 @@ export default class DatabaseService implements TokenRingService {
   getDatasourceNames = this.datasources.keysArray;
 
   config: ResolvedDatabaseServiceConfig = {};
+  private agentTypes: string[] = ["database"];
 
   /** Configuration for one datasource, for callers that need `allowWrites`. */
   getDataSourceConfig(name: string): ResolvedDatabaseConfiguration | undefined {
     return this.config[name];
+  }
+
+  /** Agent types configured for database work (from DatabaseServiceConfigSchema.agentTypes). */
+  getAgentTypes(): string[] {
+    return [...this.agentTypes];
   }
 
   private buildDataSource(config: ResolvedDatabaseConfiguration): DataSource {
@@ -48,7 +63,11 @@ export default class DatabaseService implements TokenRingService {
     return factory(config);
   }
 
-  reconfigure(config: ResolvedDatabaseServiceConfig): void {
+  reconfigure(config: ResolvedDatabaseServiceConfig, agentTypes?: readonly string[]): void {
+    if (agentTypes) {
+      this.agentTypes = [...agentTypes];
+    }
+
     this.datasources.reconcileAgainst(config, {
       creating: (_name, datasourceConfig) => this.buildDataSource(datasourceConfig),
       deleting: (_name, datasource) => {

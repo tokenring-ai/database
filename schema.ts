@@ -1,3 +1,4 @@
+import type { ConfigFieldMeta } from "@tokenring-ai/app/config/metadata";
 import { secret } from "@tokenring-ai/secrets/secret";
 import { z } from "zod";
 import { filterOperators } from "./types.ts";
@@ -5,7 +6,7 @@ import { filterOperators } from "./types.ts";
 export const DatabaseConfiguration = z.object({
   url: secret({
     label: "Connection String",
-    description: "Full connection string, e.g. mysql://user:password@host:3306/dbname",
+    description: "Full connection string, e.g. mysql://user:password@host:3306/dbname, postgres://user:password@host:5432/dbname, or sqlite:///path/to/data.db",
   }),
   allowWrites: z.boolean().default(false).meta({
     description: "Allow agents to run statements that modify data on this datasource",
@@ -14,15 +15,41 @@ export const DatabaseConfiguration = z.object({
 
 export type DatabaseConfiguration = z.infer<typeof DatabaseConfiguration>;
 
-export const DatabaseServiceConfigSchema = z.record(z.string(), DatabaseConfiguration).prefault({});
+/**
+ * Lift legacy flat datasource records (`{ mydb: { url, allowWrites } }`) into
+ * `{ datasources: { mydb: … } }` so existing configs keep working.
+ */
+function migrateLegacyDatabaseConfig(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const obj = input as Record<string, unknown>;
+  if ("datasources" in obj || "agentTypes" in obj) return obj;
+  return { datasources: obj };
+}
 
-export type DatabaseServiceConfig = z.input<typeof DatabaseServiceConfigSchema>;
-export type ParsedDatabaseServiceConfig = z.output<typeof DatabaseServiceConfigSchema>;
+const DatabaseServiceConfigObjectSchema = z
+  .object({
+    datasources: z
+      .record(z.string(), DatabaseConfiguration)
+      .prefault({})
+      .meta({ label: "Datasources", description: "Named database connections" } satisfies ConfigFieldMeta),
+    agentTypes: z
+      .array(z.string())
+      .default(["database"])
+      .meta({ description: "The available agent types that can be used for database work" } satisfies ConfigFieldMeta),
+  })
+  .prefault({})
+  .meta({ label: "Database", description: "Database datasources and agent settings" } satisfies ConfigFieldMeta);
+
+/** Accepts current config plus legacy flat datasource records. */
+export const DatabaseServiceConfigSchema = z.preprocess(migrateLegacyDatabaseConfig, DatabaseServiceConfigObjectSchema);
+
+export type DatabaseServiceConfig = z.input<typeof DatabaseServiceConfigObjectSchema>;
+export type ParsedDatabaseServiceConfig = z.output<typeof DatabaseServiceConfigObjectSchema>;
 
 /**
- * What {@link DatabaseService} actually consumes. The `url` secret reference is
- * resolved to a plain connection string in the plugin's `reconfigure`, so the
- * service itself never touches the secrets machinery.
+ * What {@link DatabaseService} actually consumes for connections. The `url`
+ * secret reference is resolved to a plain connection string in the plugin's
+ * `reconfigure`, so the service itself never touches the secrets machinery.
  */
 export interface ResolvedDatabaseConfiguration {
   url: string;

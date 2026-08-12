@@ -11,6 +11,8 @@ import DatabaseService from "./DatabaseService.ts";
 import addSelectedRows from "./hooks/addSelectedRows.ts";
 import packageJSON from "./package.json" with { type: "json" };
 import MySQLDatabaseProvider from "./providers/MySQLDatabaseProvider.ts";
+import PostgreSQLDatabaseProvider from "./providers/PostgreSQLDatabaseProvider.ts";
+import SQLiteDatabaseProvider from "./providers/SQLiteDatabaseProvider.ts";
 import databaseRPC from "./rpc/database.ts";
 import { DatabaseServiceConfigSchema, type ResolvedDatabaseServiceConfig } from "./schema.ts";
 import tools from "./tools.ts";
@@ -30,6 +32,10 @@ export default {
 
     databaseService.registerFactory("mysql", classFactory(MySQLDatabaseProvider));
     databaseService.registerFactory("mariadb", classFactory(MySQLDatabaseProvider));
+    databaseService.registerFactory("postgres", classFactory(PostgreSQLDatabaseProvider));
+    databaseService.registerFactory("postgresql", classFactory(PostgreSQLDatabaseProvider));
+    databaseService.registerFactory("sqlite", classFactory(SQLiteDatabaseProvider));
+    databaseService.registerFactory("file", classFactory(SQLiteDatabaseProvider));
 
     app.waitForService(ChatService, chatService => {
       chatService.addTools(tools);
@@ -46,12 +52,12 @@ export default {
     // Connection strings are secret references; resolve them here so the
     // service only ever deals in plain URLs.
     const resolved: ResolvedDatabaseServiceConfig = {};
-    for (const [name, datasource] of Object.entries(config.database)) {
+    for (const [name, datasource] of Object.entries(config.database.datasources)) {
       const url = resolveSecret(app, datasource.url);
       if (!url) continue; // Unset secret — skip rather than fail the whole app's boot.
       resolved[name] = { url, allowWrites: datasource.allowWrites };
     }
-    app.requireService(DatabaseService).reconfigure(resolved);
+    app.requireService(DatabaseService).reconfigure(resolved, config.database.agentTypes);
   },
   configSchema: packageConfigSchema,
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { MAX_ROW_LIMIT } from "../schema.ts";
 import type { ColumnDef, SelectRowsRequest } from "../types.ts";
-import buildSelect, { InvalidSelectRequestError } from "../util/buildSelect.ts";
+import buildSelect, { dollarPlaceholder, doubleQuoteIdentifier, InvalidSelectRequestError } from "../util/buildSelect.ts";
 
 const columns: ColumnDef[] = [
   { name: "id", dataType: "int", nullable: false, isPrimaryKey: true, defaultValue: null },
@@ -123,5 +123,42 @@ describe("buildSelect", () => {
 
   it("rejects a table with no columns", () => {
     expect(() => buildSelect(request(), [])).toThrow(InvalidSelectRequestError);
+  });
+
+  it("supports double-quoted identifiers and $n placeholders for Postgres", () => {
+    const built = buildSelect(
+      request({
+        filters: [
+          { column: "email", op: "eq", value: "a@b.c" },
+          { column: "id", op: "in", value: [1, 2] },
+        ],
+        limit: 10,
+        offset: 5,
+      }),
+      columns,
+      {
+        quoteIdentifier: doubleQuoteIdentifier,
+        parameterPlaceholder: dollarPlaceholder,
+      },
+    );
+
+    expect(built.sql).toBe('SELECT "id", "email", "deleted_at" FROM "users" WHERE "email" = $1 AND "id" IN ($2, $3) LIMIT $4 OFFSET $5');
+    expect(built.params).toEqual(["a@b.c", 1, 2, 10, 5]);
+    expect(built.countSql).toBe('SELECT COUNT(*) AS total FROM "users" WHERE "email" = $1 AND "id" IN ($2, $3)');
+    expect(built.countParams).toEqual(["a@b.c", 1, 2]);
+  });
+
+  it("quotes a schema-qualified table via quoteTable", () => {
+    const built = buildSelect(request({ table: "public.users" }), columns, {
+      quoteIdentifier: doubleQuoteIdentifier,
+      quoteTable: table => {
+        const [schema, name] = table.split(".");
+        return `${doubleQuoteIdentifier(schema!)}.${doubleQuoteIdentifier(name!)}`;
+      },
+      parameterPlaceholder: dollarPlaceholder,
+    });
+
+    expect(built.sql).toStartWith('SELECT "id", "email", "deleted_at" FROM "public"."users"');
+    expect(built.sql).toEndWith("LIMIT $1 OFFSET $2");
   });
 });

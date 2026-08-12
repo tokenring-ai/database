@@ -16,7 +16,7 @@ export default {
   name: "Database RPC",
   path: "/rpc/database",
   methods: {
-    getDatasources: {
+    getDatabaseConfiguration: {
       type: "query",
       input: z.object({}),
       // Names and flags only — the connection string never leaves the server.
@@ -28,6 +28,7 @@ export default {
             allowWrites: z.boolean(),
           }),
         ),
+        agentTypes: z.array(z.string()),
       }),
     },
     testConnection: {

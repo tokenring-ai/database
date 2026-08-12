@@ -21,7 +21,7 @@ function projectState(agent: Agent, service: DatabaseService) {
 }
 
 export default createRPCEndpoint(DatabaseRpcSchema, {
-  getDatasources(_args, app: TokenRingApp) {
+  getDatabaseConfiguration(_args, app: TokenRingApp) {
     const service = app.requireService(DatabaseService);
     return {
       datasources: service.getDatasourceNames().map(name => {
@@ -33,6 +33,7 @@ export default createRPCEndpoint(DatabaseRpcSchema, {
           allowWrites: config?.allowWrites ?? false,
         };
       }),
+      agentTypes: service.getAgentTypes(),
     };
   },
 
