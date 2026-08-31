@@ -58,66 +58,85 @@ describe("schemeOf", () => {
 });
 
 describe("DatabaseService.reconfigure", () => {
-  it("instantiates a datasource from a mysql:// url", () => {
+  it("instantiates a datasource from a mysql:// url", async () => {
     const { service, created } = serviceWithStubFactory();
-    service.reconfigure({ main: { url: "mysql://user:pw@host:3306/db", allowWrites: false } });
+    await service.reconfigure({ main: { url: "mysql://user:pw@host:3306/db", allowWrites: false } });
 
     expect(service.getDatasourceNames()).toEqual(["main"]);
     expect(created).toHaveLength(1);
   });
 
-  it("reports a helpful error for an unregistered scheme", () => {
+  it("reports a helpful error for an unregistered scheme", async () => {
     const { service } = serviceWithStubFactory();
-    expect(() => service.reconfigure({ main: { url: "postgres://host/db", allowWrites: false } })).toThrow(
+    await expect(service.reconfigure({ main: { url: "postgres://host/db", allowWrites: false } })).rejects.toThrow(
       /No provider registered for database scheme postgres/,
     );
   });
 
-  it("keeps the existing connection when config is unchanged", () => {
+  it("keeps the existing connection when config is unchanged", async () => {
     const { service, created } = serviceWithStubFactory();
     const config = { main: { url: "mysql://host/db", allowWrites: false } };
 
-    service.reconfigure(config);
-    service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
+    await service.reconfigure(config);
+    await service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
 
     // Without this.config being assigned, the second pass would rebuild.
     expect(created).toHaveLength(1);
     expect(created[0]!.disposed).toBe(false);
   });
 
-  it("replaces and disposes the old connection when the url changes", () => {
+  it("replaces and disposes the old connection when the url changes", async () => {
     const { service, created } = serviceWithStubFactory();
-    service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
-    service.reconfigure({ main: { url: "mysql://other/db", allowWrites: false } });
+    await service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
+    await service.reconfigure({ main: { url: "mysql://other/db", allowWrites: false } });
 
     expect(created).toHaveLength(2);
     expect(created[0]!.disposed).toBe(true);
     expect(created[1]!.disposed).toBe(false);
   });
 
-  it("leaves the working connection in place when the replacement can't be built", () => {
+  it("leaves the working connection in place when the replacement can't be built", async () => {
     const { service, created } = serviceWithStubFactory();
-    service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
+    await service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
 
-    expect(() => service.reconfigure({ main: { url: "postgres://host/db", allowWrites: false } })).toThrow();
+    await expect(service.reconfigure({ main: { url: "postgres://host/db", allowWrites: false } })).rejects.toThrow();
 
     // Build-before-dispose: the original must still be usable, not a disposed husk.
     expect(created[0]!.disposed).toBe(false);
     expect(service.getDataSource("main")).toBe(created[0] as unknown as DataSource);
   });
 
-  it("disposes a datasource that was removed from config", () => {
+  it("disposes a datasource that was removed from config", async () => {
     const { service, created } = serviceWithStubFactory();
-    service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
-    service.reconfigure({});
+    await service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
+    await service.reconfigure({});
 
     expect(created[0]!.disposed).toBe(true);
     expect(service.getDatasourceNames()).toEqual([]);
   });
 
-  it("exposes allowWrites for the write guard", () => {
+  it("awaits async disposal before reconfigure resolves", async () => {
+    let disposeFinished = false;
+    const service = new DatabaseService();
+    service.registerFactory("mysql", options => {
+      const stub = stubDataSource(options);
+      stub[Symbol.asyncDispose] = async () => {
+        await Promise.resolve();
+        stub.disposed = true;
+        disposeFinished = true;
+      };
+      return stub as unknown as DataSource;
+    });
+
+    await service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
+    await service.reconfigure({});
+
+    expect(disposeFinished).toBe(true);
+  });
+
+  it("exposes allowWrites for the write guard", async () => {
     const { service } = serviceWithStubFactory();
-    service.reconfigure({
+    await service.reconfigure({
       ro: { url: "mysql://host/ro", allowWrites: false },
       rw: { url: "mysql://host/rw", allowWrites: true },
     });

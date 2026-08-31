@@ -47,4 +47,30 @@ describe("isReadOnlyQuery", () => {
   it("does not treat a word merely starting with a keyword as that keyword", () => {
     expect(isReadOnlyQuery("selectify()")).toBe(false);
   });
+
+  it("rejects a write hidden after a leading read", () => {
+    expect(isReadOnlyQuery("SELECT 1; DROP TABLE users")).toBe(false);
+    expect(isReadOnlyQuery("SELECT 1; DELETE FROM users")).toBe(false);
+    expect(isReadOnlyQuery("SHOW TABLES; TRUNCATE users")).toBe(false);
+  });
+
+  it("still accepts a single read with a trailing semicolon", () => {
+    expect(isReadOnlyQuery("SELECT 1;")).toBe(true);
+    expect(isReadOnlyQuery("SELECT 1;   ")).toBe(true);
+  });
+
+  it("accepts multiple read-only statements", () => {
+    expect(isReadOnlyQuery("SELECT 1; SELECT 2")).toBe(true);
+    expect(isReadOnlyQuery("SHOW TABLES; DESCRIBE users")).toBe(true);
+  });
+
+  it("does not treat a semicolon inside a string or comment as a statement break", () => {
+    expect(isReadOnlyQuery("SELECT 'foo; DROP TABLE users'")).toBe(true);
+    expect(isReadOnlyQuery("SELECT 1 /* ; DROP TABLE users */")).toBe(true);
+    expect(isReadOnlyQuery("SELECT 1 -- ; DROP TABLE users")).toBe(true);
+  });
+
+  it("rejects a write after a commented-out semicolon", () => {
+    expect(isReadOnlyQuery("SELECT 1; -- note\nDROP TABLE users")).toBe(false);
+  });
 });

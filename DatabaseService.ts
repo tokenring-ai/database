@@ -63,23 +63,23 @@ export default class DatabaseService implements TokenRingService {
     return factory(config);
   }
 
-  reconfigure(config: ResolvedDatabaseServiceConfig, agentTypes?: readonly string[]): void {
+  async reconfigure(config: ResolvedDatabaseServiceConfig, agentTypes?: readonly string[]): Promise<void> {
     if (agentTypes) {
       this.agentTypes = [...agentTypes];
     }
 
-    this.datasources.reconcileAgainst(config, {
+    await this.datasources.reconcileAgainstAsync(config, {
       creating: (_name, datasourceConfig) => this.buildDataSource(datasourceConfig),
-      deleting: (_name, datasource) => {
-        void datasource[Symbol.asyncDispose]();
+      deleting: async (_name, datasource) => {
+        await datasource[Symbol.asyncDispose]();
       },
-      updating: (name, datasource, datasourceConfig) => {
+      updating: async (name, datasource, datasourceConfig) => {
         if (deepEqual(this.config[name], datasourceConfig)) return datasource;
 
         // Build first: a throw here then leaves the existing connection in place
         // rather than parking an already-disposed one in the registry.
         const replacement = this.buildDataSource(datasourceConfig);
-        void datasource[Symbol.asyncDispose]();
+        await datasource[Symbol.asyncDispose]();
         return replacement;
       },
     });

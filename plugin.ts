@@ -28,7 +28,7 @@ export default {
   description: packageJSON.description,
   config,
   install(app) {
-    const databaseService = app.addService(new DatabaseService());
+    const databaseService = app.addService(DatabaseService, new DatabaseService());
 
     databaseService.registerFactory("mysql", classFactory(MySQLDatabaseProvider));
     databaseService.registerFactory("mariadb", classFactory(MySQLDatabaseProvider));
@@ -48,7 +48,7 @@ export default {
       rpcService.registerEndpoint(databaseRPC);
     });
   },
-  reconfigure(app, config) {
+  async reconfigure(app, config) {
     // Connection strings are secret references; resolve them here so the
     // service only ever deals in plain URLs.
     const resolved: ResolvedDatabaseServiceConfig = {};
@@ -57,7 +57,7 @@ export default {
       if (!url) continue; // Unset secret — skip rather than fail the whole app's boot.
       resolved[name] = { url, allowWrites: datasource.allowWrites };
     }
-    app.requireService(DatabaseService).reconfigure(resolved, config.database.agentTypes);
+    await app.requireService(DatabaseService).reconfigure(resolved, config.database.agentTypes);
   },
   configSchema: packageConfigSchema,
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;
