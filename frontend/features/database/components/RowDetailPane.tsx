@@ -1,8 +1,26 @@
-import { KeyRound, X } from "lucide-react";
+import { IconButton } from "@tokenring-ai/one-frontend/ui";
+import { KeyRound, Pencil, Trash2, X } from "lucide-react";
 import type { ColumnDef, Row } from "../types.ts";
 
-/** Single-row view, for tables too wide to read across in the grid. */
-export default function RowDetailPane({ row, columns, onClose }: { row: Row; columns: ColumnDef[]; onClose: () => void }) {
+/**
+ * Single-row view, for tables too wide to read across in the grid. With
+ * `onEdit` / `onDelete` it offers editing; `editBlockedReason` explains why not.
+ */
+export default function RowDetailPane({
+  row,
+  columns,
+  onClose,
+  onEdit,
+  onDelete,
+  editBlockedReason,
+}: {
+  row: Row;
+  columns: ColumnDef[];
+  onClose: () => void;
+  onEdit?: (() => void) | undefined;
+  onDelete?: (() => void) | undefined;
+  editBlockedReason?: string | null | undefined;
+}) {
   const fields = columns.length > 0 ? columns.map(column => column.name) : Object.keys(row);
   const columnByName = new Map(columns.map(column => [column.name, column]));
 
@@ -12,7 +30,9 @@ export default function RowDetailPane({ row, columns, onClose }: { row: Row; col
       className="absolute inset-0 z-30 w-full bg-secondary flex flex-col min-h-0 lg:relative lg:inset-auto lg:z-auto lg:w-80 lg:shrink-0 lg:border-l lg:border-primary"
     >
       <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-primary">
-        <span className="text-xs font-semibold text-muted uppercase tracking-wider">Row detail</span>
+        <span className="flex-1 text-xs font-semibold text-muted uppercase tracking-wider">Row detail</span>
+        {onEdit && <IconButton variant="ghost" icon={Pencil} label="Edit row" onClick={onEdit} />}
+        {onDelete && <IconButton variant="ghost" icon={Trash2} label="Delete row" onClick={onDelete} />}
         <button
           type="button"
           onClick={onClose}
@@ -23,6 +43,11 @@ export default function RowDetailPane({ row, columns, onClose }: { row: Row; col
         </button>
       </div>
 
+      {editBlockedReason && (
+        <p className="shrink-0 px-3 py-1.5 text-[11px] text-muted border-b border-primary" data-testid="row-edit-blocked">
+          Editing unavailable: {editBlockedReason}
+        </p>
+      )}
       <dl className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
         {fields.map(field => {
           const column = columnByName.get(field);

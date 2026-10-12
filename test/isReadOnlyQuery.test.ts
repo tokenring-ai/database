@@ -74,3 +74,28 @@ describe("isReadOnlyQuery", () => {
     expect(isReadOnlyQuery("SELECT 1; -- note\nDROP TABLE users")).toBe(false);
   });
 });
+
+describe("isReadOnlyQuery write detection inside reads", () => {
+  it("rejects EXPLAIN ANALYZE of a write, which really executes it", () => {
+    expect(isReadOnlyQuery("EXPLAIN ANALYZE DELETE FROM users")).toBe(false);
+    expect(isReadOnlyQuery("explain update users set name = 'x'")).toBe(false);
+    expect(isReadOnlyQuery("EXPLAIN ANALYZE SELECT * FROM users")).toBe(true);
+  });
+
+  it("rejects SELECT … INTO, which creates a table or writes a file", () => {
+    expect(isReadOnlyQuery("SELECT * INTO backup FROM users")).toBe(false);
+    expect(isReadOnlyQuery("SELECT * FROM users INTO OUTFILE '/tmp/x'")).toBe(false);
+  });
+
+  it("ignores write keywords inside string literals and quoted identifiers", () => {
+    expect(isReadOnlyQuery("SELECT 'insert into users' AS hint")).toBe(true);
+    expect(isReadOnlyQuery('SELECT "update" FROM audit')).toBe(true);
+    expect(isReadOnlyQuery("WITH x AS (SELECT 'delete' AS word) SELECT * FROM x")).toBe(true);
+  });
+});
+
+describe("isReadOnlyQuery plain SELECT", () => {
+  it("keeps the replace() function and column names that contain keywords readable", () => {
+    expect(isReadOnlyQuery("SELECT replace(name, 'a', 'b'), updated_at FROM users")).toBe(true);
+  });
+});

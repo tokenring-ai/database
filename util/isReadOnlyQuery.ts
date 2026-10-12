@@ -118,6 +118,35 @@ function readDollarQuote(sql: string, start: number): number | null {
   return close === -1 ? sql.length : close + delimiter.length;
 }
 
+/** Keywords that make the statement a CTE or EXPLAIN wraps a write. */
+const writeKeywordPattern = /\b(insert|update|delete|replace|merge|drop|alter|create|truncate|grant|revoke|into)\b/;
+/**
+ * A plain SELECT only writes through `INTO`. The full list would misfire on the
+ * `replace()` string function and on `FOR UPDATE` row locks.
+ */
+const selectWritePattern = /\binto\b/;
+
+/**
+ * Blanks out string literals and quoted identifiers so a keyword inside
+ * `'please update me'` or `"delete"` is not mistaken for a write.
+ */
+function maskQuoted(sql: string): string {
+  let out = "";
+  let i = 0;
+  while (i < sql.length) {
+    const char = sql[i]!;
+    if (char === "'" || char === '"' || char === "`") {
+      const closed = readQuoted(sql, i);
+      out += " ".repeat(closed - i);
+      i = closed;
+      continue;
+    }
+    out += char;
+    i++;
+  }
+  return out;
+}
+
 function isReadOnlyStatement(sql: string): boolean {
   const statement = stripLeadingComments(sql).toLowerCase();
   if (statement === "") return false;
@@ -126,9 +155,14 @@ function isReadOnlyStatement(sql: string): boolean {
   if (!keyword || !readOnlyLeadingKeywords.includes(keyword)) return false;
 
   // A CTE reads only if what it feeds is also a read — `WITH x AS (...) DELETE`
-  // is valid in several dialects.
-  if (keyword === "with") {
-    return !/\b(insert|update|delete|replace|merge|drop|alter|create|truncate|grant|revoke)\b/.test(statement);
+  // is valid in several dialects. `EXPLAIN ANALYZE` really runs the statement it
+  // explains (Postgres, MySQL 8), and `SELECT … INTO` creates a table (Postgres)
+  // or writes a file (MySQL `INTO OUTFILE`), so those are checked the same way.
+  if (keyword === "with" || keyword === "explain") {
+    return !writeKeywordPattern.test(maskQuoted(statement));
+  }
+  if (keyword === "select") {
+    return !selectWritePattern.test(maskQuoted(statement));
   }
 
   return true;

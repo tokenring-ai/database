@@ -43,6 +43,28 @@ export default class DatabaseService implements TokenRingService {
 
   config: ResolvedDatabaseServiceConfig = {};
   private agentTypes: string[] = ["database"];
+  /** Configured datasources whose connection-string secret has no value; listed, never connected. */
+  private missingSecret: Record<string, { allowWrites: boolean }> = {};
+
+  /** Datasources that are configured but cannot connect because their secret is unset. */
+  getMissingSecretDatasources(): Record<string, { allowWrites: boolean }> {
+    return { ...this.missingSecret };
+  }
+
+  /**
+   * Dry-runs a connection string without registering it: builds a throwaway
+   * datasource, lists its tables, and disposes it. Lets the UI test before
+   * saving instead of saving a broken datasource to test it.
+   */
+  async testUrl(url: string): Promise<{ tableCount: number }> {
+    const datasource = this.buildDataSource({ url, allowWrites: false });
+    try {
+      const tables = await datasource.listTables();
+      return { tableCount: tables.length };
+    } finally {
+      await datasource[Symbol.asyncDispose]();
+    }
+  }
 
   /** Configuration for one datasource, for callers that need `allowWrites`. */
   getDataSourceConfig(name: string): ResolvedDatabaseConfiguration | undefined {
@@ -63,10 +85,15 @@ export default class DatabaseService implements TokenRingService {
     return factory(config);
   }
 
-  async reconfigure(config: ResolvedDatabaseServiceConfig, agentTypes?: readonly string[]): Promise<void> {
+  async reconfigure(
+    config: ResolvedDatabaseServiceConfig,
+    agentTypes?: readonly string[],
+    missingSecret: Record<string, { allowWrites: boolean }> = {},
+  ): Promise<void> {
     if (agentTypes) {
       this.agentTypes = [...agentTypes];
     }
+    this.missingSecret = { ...missingSecret };
 
     await this.datasources.reconcileAgainstAsync(config, {
       creating: (_name, datasourceConfig) => this.buildDataSource(datasourceConfig),

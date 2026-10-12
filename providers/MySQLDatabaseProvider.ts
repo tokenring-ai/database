@@ -3,11 +3,14 @@ import type {
   DataSource,
   DataSourceOptions,
   ExecuteSqlResult,
+  RowMutation,
+  RowMutationResult,
   SelectRowsRequest,
   SelectRowsResult,
   TableRef,
   TableSchema,
 } from "@tokenring-ai/database/types";
+import buildMutation from "@tokenring-ai/database/util/buildMutation";
 import buildSelect from "@tokenring-ai/database/util/buildSelect";
 import normalizeCellValue, { normalizeCount, normalizeRows } from "@tokenring-ai/database/util/normalizeCellValue";
 import { SQL } from "bun";
@@ -37,10 +40,12 @@ export default class MySQLDatabaseProvider implements DataSource {
   async executeSql(sqlQuery: string): Promise<ExecuteSqlResult> {
     const result = await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
     const rows = normalizeRows(result);
+    const affectedRows = (result as { count?: unknown }).count;
 
     return {
       rows,
       fields: rows.length > 0 ? Object.keys(rows[0]!) : [],
+      ...(typeof affectedRows === "number" ? { affectedRows } : {}),
     };
   }
 
@@ -139,6 +144,17 @@ export default class MySQLDatabaseProvider implements DataSource {
     return schema;
   }
 
+  async mutateRow(mutation: RowMutation): Promise<RowMutationResult> {
+    // getTableSchema throws on an unknown table, so the table name is validated too.
+    // Defaults: backtick identifiers and `?` placeholders — what the mysql adapter binds.
+    const schema = await this.getTableSchema(mutation.table);
+    const built = buildMutation(mutation, schema);
+    const result = await this.sql.unsafe<Record<string, unknown>[]>(built.sql, built.params);
+    // `count` is how many rows came back in the result set (0 for a write).
+    // The OK packet's row count is `affectedRows`.
+    return { affectedRows: writeAffectedRows(result) };
+  }
+
   async selectRows(request: SelectRowsRequest): Promise<SelectRowsResult> {
     // getTableSchema throws on an unknown table, so this doubles as the table
     // identifier check before anything reaches the query string.
@@ -170,6 +186,18 @@ export default class MySQLDatabaseProvider implements DataSource {
       return null;
     }
   }
+}
+
+/**
+ * Rows a MySQL write changed. Prefer the OK-packet `affectedRows`; fall back
+ * to `count` only when the driver didn't report it.
+ */
+function writeAffectedRows(result: unknown): number | null {
+  if (result === null || typeof result !== "object") return null;
+  const record = result as { affectedRows?: unknown; count?: unknown };
+  const affected = normalizeCount(record.affectedRows);
+  if (affected !== null) return affected;
+  return normalizeCount(record.count);
 }
 
 /** Reads a driver-returned catalog value as a string, tolerating Buffers. */

@@ -32,7 +32,14 @@ registering a factory under a URL scheme (e.g. `mysql://`, `postgres://`,
   into agent context automatically
 - **Lifecycle hook**: Attaches the active table schema and selected rows to chat
   messages so the agent can reason about the user's current selection
-- **RPC layer**: Full CRUD RPC endpoint for frontend database browsing apps
+- **RPC layer**: RPC for the frontend: datasource list, connection test, tables,
+  schema and DDL, paged/filtered rows, agent selection, a guarded SQL runner
+  (`executeSql`) and single-row insert/update/delete (`mutateRow`). Datasources
+  are added, edited and removed through the shared configuration layer, not this endpoint
+- **Database dashboard**: a datasource tree, one panel per table (filter, sort,
+  page, row detail, row editing), a SQL **Query** panel per datasource with
+  history, and a **Schema** panel (columns and keys of a table, or the DDL of a
+  whole datasource). See [Frontend](#frontend)
 - **Secret-backed connections**: Connection strings are stored as secret
   references and resolved at configuration time
 
@@ -297,6 +304,7 @@ type Row = Record<string, CellValue>;
 |----------|-----------|-----------------------------------------|
 | `rows`   | `Row[]`   | Array of result rows as key-value pairs |
 | `fields` | `string[]`| Array of column/field names             |
+| `affectedRows` | `number` (optional) | Rows changed or returned, when the driver reports it (Bun SQL `count`) |
 
 #### TableRef
 
@@ -376,9 +384,22 @@ interface DataSource {
   listTables(): Promise<TableRef[]>;
   getTableSchema(table: string): Promise<TableSchema>;
   selectRows(request: SelectRowsRequest): Promise<SelectRowsResult>;
+  /** Optional: single-row insert/update/delete with bound parameters. */
+  mutateRow?(mutation: RowMutation): Promise<RowMutationResult>;
   [Symbol.asyncDispose](): Promise<void>;
 }
+
+type RowMutation =
+  | { kind: "insert"; table: string; values: Record<string, CellValue> }
+  | { kind: "update"; table: string; key: Record<string, CellValue>; values: Record<string, CellValue> }
+  | { kind: "delete"; table: string; key: Record<string, CellValue> };
+
+interface RowMutationResult { affectedRows: number | null }
 ```
+
+All three built-in providers implement `mutateRow` by building the statement
+with `util/buildMutation.ts`. A provider without it simply has no row editing
+(the RPC answers `unsupported`).
 
 Providers are created by a `DatabaseProviderFactory`:
 
@@ -434,11 +455,48 @@ function isReadOnlyQuery(sql: string): boolean
 Determines whether a SQL statement only reads. Strips leading comments first so
 `/* x */ DELETE ...` cannot masquerade as a read. Recognizes `SELECT`, `SHOW`,
 `DESCRIBE`, `DESC`, `EXPLAIN`, and `WITH` (CTE) as read-only leading keywords.
-A CTE is read-only only if its body does not contain write keywords
-(`INSERT`, `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `DROP`, `ALTER`, `CREATE`,
-`TRUNCATE`, `GRANT`, `REVOKE`).
+Every `;`-separated statement must be a read. A CTE or an `EXPLAIN` is read-only
+only if it does not contain write keywords (`INSERT`, `UPDATE`, `DELETE`,
+`REPLACE`, `MERGE`, `DROP`, `ALTER`, `CREATE`, `TRUNCATE`, `GRANT`, `REVOKE`,
+`INTO`) — `EXPLAIN ANALYZE` really executes the statement. A plain `SELECT` is a
+write when it uses `INTO` (`SELECT … INTO` creates a table in Postgres; MySQL
+`INTO OUTFILE` writes a file). String literals and quoted identifiers are masked
+before these checks.
+
+This is the single read/write classifier for both the `database_executeSql`
+tool and the Query panel (`executeSql` RPC). It cannot see side effects of
+functions called from a `SELECT` (e.g. `SELECT pg_terminate_backend(…)`);
+`allowWrites: false` plus database-level permissions remain the real boundary.
 
 Also exports `stripLeadingComments(sql: string): string`.
+
+#### runQuery
+
+Location: `util/runQuery.ts`
+
+```typescript
+function runQuery(datasource: DataSource, sql: string, options: RunQueryOptions): Promise<RunQueryResult>
+```
+
+Runs a user-typed statement for the `executeSql` RPC with the same rules as the
+`database_executeSql` tool: a non-read is `writeRefused` on a datasource with
+`allowWrites: false`, and returns `confirmationRequired` (nothing is executed)
+unless `confirmWrite` is set. Returned rows are capped at `maxRows`
+(≤ `MAX_ROW_LIMIT`, 1000); `rowCount` and `truncated` report the full count.
+The cap is applied after the driver returns, so a huge result is still read
+into server memory once. SQL errors come back as `{ status: "error" }`.
+
+#### buildMutation
+
+Location: `util/buildMutation.ts`
+
+Builds parameterized SQL for a `RowMutation`. Every value is a bound parameter
+and every column is checked against the real table schema (unknown names are
+rejected, never escaped). `update` and `delete` require a table with a primary
+key and a `key` naming exactly its columns with non-null values, so at most one
+row can match. Columns whose values do not round-trip through the browser
+(binary, date/time, JSON, arrays, geometry) can be set to NULL but not written,
+and cannot serve as the key.
 
 #### buildSelect
 
@@ -577,11 +635,14 @@ Location: `rpc/database.ts` (schema: `rpc/schema.ts`)
 
 | Method | Type | Description |
 |--------|------|-------------|
-| `getDatabaseConfiguration` | query | Returns configured datasources (name, scheme, `allowWrites`) and available `agentTypes` (connection strings never leave the server) |
-| `testConnection` | mutation | Tests a datasource connection by listing tables; returns `ok`, `tableCount` on success, or `error` message |
+| `getDatabaseConfiguration` | query | Returns configured datasources (name, scheme, `allowWrites`, `status` — `"missingSecret"` when the connection-string secret is unset) and available `agentTypes` (connection strings never leave the server) |
+| `testConnection` | mutation | Tests a datasource connection by listing tables; with `url` it dry-runs that connection string without registering it. Returns `ok`, `tableCount` on success, or `error` message |
 | `listTables` | query | Lists tables and views on a datasource |
 | `getTableSchema` | query | Returns the full `TableSchema` for a table |
 | `selectRows` | query | Reads rows with column selection, filtering, sorting, and paging |
+| `executeSql` | mutation | Runs one user-typed statement (`sql`) via `runQuery`. Non-reads need `confirmWrite: true` and are refused on read-only datasources; optional `maxRows` (≤ 1000). Result `status`: `success` (`rows`, `fields`, `rowCount`, `truncated`, `affectedRows`, `elapsedMs`, `readOnly`), `confirmationRequired`, `writeRefused`, or `error` |
+| `showSchema` | query | `CREATE TABLE` (or equivalent) text for every table and view, keyed by name |
+| `mutateRow` | mutation | Inserts one row, or updates/deletes the row named by its full primary key (`kind`: `insert` \| `update` \| `delete`), via `buildMutation`. Result `status`: `success` (`affectedRows`), `writeRefused` (read-only datasource), `unsupported` (provider has no `mutateRow`), or `error` |
 | `getDatabaseState` | query | Returns the current database state for an agent (active datasource, table, schema, selected row count, available datasources) |
 | `updateDatabaseState` | mutation | Updates an agent's database state (active datasource, active table, selected rows); returns the projected state |
 
@@ -592,6 +653,28 @@ on `status`:
 |--------|-------------------|
 | `success` | `activeDatasource`, `activeTable`, `activeTableSchema`, `selectedRowCount`, `availableDatasources` |
 | `agentNotFound` | (none) |
+
+## Frontend
+
+The Database dashboard (`/database`, `frontend/app.tsx`) is a dock layout:
+
+| View | Id | What it does |
+|------|----|--------------|
+| Datasources | `datasource-tree` | Navigator: datasources, the expanded one's tables, agent sessions. Per datasource: **Query** and **Schema** buttons; per table: a **Columns** button |
+| Table | `database-table:{datasource}/{table}` | Filter, sort and page rows; row detail; hand selected rows to an agent. On a writable datasource: **Add row**, and **Edit row** / **Delete row** (confirmed) in the row detail when the table has a primary key of a round-trippable type |
+| Query | `database-query:{datasource}` | SQL editor (shared Monaco `CodeEditor`), Run button and Ctrl/⌘+Enter, results grid (double-click a row for its detail), row count and elapsed time, errors. Statements that `isReadOnlyQuery` does not classify as reads ask "This statement can modify data" before running; on a read-only datasource the server refuses them. Results are capped at 1000 rows. The draft is kept per datasource in `localStorage` (`database:queryDraft:<datasource>`) |
+| Schema | `database-schema:{datasource}[/{table}]` | A table's columns (type, nullability, default, comment), primary key and DDL; without a table, the DDL of every table with links to its columns |
+
+**Query history** is kept per datasource in this browser's `localStorage`
+(`database:queryHistory`, newest first, at most 50 entries per datasource; a
+re-run statement moves to the top). Each entry can be loaded into the editor,
+run again, copied, or removed; the whole list can be cleared.
+
+**Row editing** sends only the fields you changed, coerced to the column type
+(numbers, booleans). On insert, untouched fields take the column default;
+nullable columns have a NULL checkbox. An update that matches no row (the key
+changed underneath you) is reported, not silently ignored. There is no
+multi-row or keyless editing — use the Query panel for those.
 
 ## Lifecycle Hooks
 
@@ -697,7 +780,11 @@ Tests are written with `bun:test` and run with `bun test`.
 | `test/buildSelect.test.ts` | SQL generation, identifier validation, parameter binding, filter operators, paging, count queries |
 | `test/normalizeCellValue.test.ts` | Cell value normalization for Buffer, Date, bigint, objects; row and count normalization |
 | `test/DatabaseService.test.ts` | `schemeOf` extraction, datasource lifecycle (create, update, dispose), `allowWrites` config |
-| `test/isReadOnlyQuery.test.ts` | Read-only detection, comment stripping, CTE write-detection, keyword matching |
+| `test/isReadOnlyQuery.test.ts` | Read-only detection, comment stripping, CTE / EXPLAIN / SELECT INTO write-detection, quoted-literal masking |
+| `test/runQuery.test.ts` | `runQuery` against SQLite (row cap, refusal, confirmation, errors) and the `executeSql`, `showSchema` and `mutateRow` RPCs |
+| `test/buildMutation.test.ts` | Mutation SQL, parameter binding and numbering, identifier and primary-key validation, lossy column types |
+| `frontend/views/database.test.tsx` | Tree, table, query, schema and row-editing views |
+| `frontend/lib/queryHistory.test.ts`, `frontend/features/database/rowEdit.test.ts` | History ordering/cap and edit-form value coercion |
 
 ## Dependencies
 

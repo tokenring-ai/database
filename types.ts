@@ -4,6 +4,8 @@ export type Row = Record<string, CellValue>;
 export interface ExecuteSqlResult {
   rows: Row[];
   fields: string[];
+  /** Rows the statement changed or returned, when the driver reports it (Bun SQL's `count`). */
+  affectedRows?: number;
 }
 
 // ─── Schema introspection ─────────────────────────────────────────────────────
@@ -72,6 +74,22 @@ export interface SelectRowsResult {
   hasMore: boolean;
 }
 
+// ─── Single-row edits ─────────────────────────────────────────────────────────
+
+/**
+ * One row inserted, or one row — identified by its full primary key — updated
+ * or deleted. Built into parameterized SQL by util/buildMutation.ts.
+ */
+export type RowMutation =
+  | { kind: "insert"; table: string; values: Record<string, CellValue> }
+  | { kind: "update"; table: string; key: Record<string, CellValue>; values: Record<string, CellValue> }
+  | { kind: "delete"; table: string; key: Record<string, CellValue> };
+
+export interface RowMutationResult {
+  /** Rows the statement changed, when the driver reports it. */
+  affectedRows: number | null;
+}
+
 // ─── Provider contract ────────────────────────────────────────────────────────
 
 export interface DataSource {
@@ -102,6 +120,14 @@ export interface DataSource {
    * real schema and bind every value as a parameter — see util/buildSelect.ts.
    */
   selectRows(request: SelectRowsRequest): Promise<SelectRowsResult>;
+
+  /**
+   * Inserts, updates or deletes one row with bound parameters. Optional: a
+   * provider without it has no row editing. Implementations must build the SQL
+   * with util/buildMutation.ts against the real table schema. Write permission
+   * (`allowWrites`) is enforced by the caller.
+   */
+  mutateRow?(mutation: RowMutation): Promise<RowMutationResult>;
 
   [Symbol.asyncDispose](): Promise<void>;
 }

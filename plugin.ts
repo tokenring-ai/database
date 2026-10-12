@@ -52,12 +52,18 @@ export default {
     // Connection strings are secret references; resolve them here so the
     // service only ever deals in plain URLs.
     const resolved: ResolvedDatabaseServiceConfig = {};
+    const missingSecret: Record<string, { allowWrites: boolean }> = {};
     for (const [name, datasource] of Object.entries(config.database.datasources)) {
       const url = resolveSecret(app, datasource.url);
-      if (!url) continue; // Unset secret — skip rather than fail the whole app's boot.
+      if (!url) {
+        // Unset secret — don't fail the whole app's boot, but keep it visible so
+        // the UI can flag it instead of the datasource silently vanishing.
+        missingSecret[name] = { allowWrites: datasource.allowWrites };
+        continue;
+      }
       resolved[name] = { url, allowWrites: datasource.allowWrites };
     }
-    await app.requireService(DatabaseService).reconfigure(resolved, config.database.agentTypes);
+    await app.requireService(DatabaseService).reconfigure(resolved, config.database.agentTypes, missingSecret);
   },
   configSchema: packageConfigSchema,
 } satisfies TokenRingPlugin<typeof packageConfigSchema>;

@@ -3,11 +3,14 @@ import type {
   DataSource,
   DataSourceOptions,
   ExecuteSqlResult,
+  RowMutation,
+  RowMutationResult,
   SelectRowsRequest,
   SelectRowsResult,
   TableRef,
   TableSchema,
 } from "@tokenring-ai/database/types";
+import buildMutation from "@tokenring-ai/database/util/buildMutation";
 import buildSelect, { doubleQuoteIdentifier } from "@tokenring-ai/database/util/buildSelect";
 import normalizeCellValue, { normalizeCount, normalizeRows } from "@tokenring-ai/database/util/normalizeCellValue";
 import { SQL } from "bun";
@@ -100,10 +103,12 @@ export default class SQLiteDatabaseProvider implements DataSource {
   async executeSql(sqlQuery: string): Promise<ExecuteSqlResult> {
     const result = await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
     const rows = normalizeRows(result);
+    const affectedRows = (result as { count?: unknown }).count;
 
     return {
       rows,
       fields: rows.length > 0 ? Object.keys(rows[0]!) : [],
+      ...(typeof affectedRows === "number" ? { affectedRows } : {}),
     };
   }
 
@@ -197,6 +202,14 @@ export default class SQLiteDatabaseProvider implements DataSource {
 
     this.schemaCache.set(table, schema);
     return schema;
+  }
+
+  async mutateRow(mutation: RowMutation): Promise<RowMutationResult> {
+    const schema = await this.getTableSchema(mutation.table);
+    const built = buildMutation(mutation, schema, { quoteIdentifier: doubleQuoteIdentifier });
+    const result = await this.sql.unsafe<Record<string, unknown>[]>(built.sql, built.params);
+    const count = (result as { count?: unknown }).count;
+    return { affectedRows: typeof count === "number" ? count : null };
   }
 
   async selectRows(request: SelectRowsRequest): Promise<SelectRowsResult> {

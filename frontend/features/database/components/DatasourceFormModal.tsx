@@ -1,11 +1,12 @@
 import type { ConfigScope } from "@tokenring-ai/app";
-import formatError from "@tokenring-ai/utility/error/formatError";
-import { AlertTriangle, CheckCircle2, Database, Loader2, X } from "lucide-react";
-import { useEffect, useState } from "react";
 import PasswordInput from "@tokenring-ai/one-frontend/components/ui/PasswordInput.tsx";
 import { toastManager } from "@tokenring-ai/one-frontend/components/ui/toast.tsx";
+import { useConfirmDialog } from "@tokenring-ai/one-frontend/hooks/useConfirmDialog.tsx";
 import { formatConfigIssues, SENSITIVE_KEEP, updateConfigLayer } from "@tokenring-ai/one-frontend/lib/configWrites.ts";
 import { configRPCClient, databaseRPCClient } from "@tokenring-ai/one-frontend/rpc.ts";
+import formatError from "@tokenring-ai/utility/error/formatError";
+import { AlertTriangle, CheckCircle2, Database, Loader2, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { CONNECTION_STRING_PLACEHOLDER } from "../constants.ts";
 import type { DatasourceSummary } from "../types.ts";
 
@@ -39,13 +40,18 @@ export default function DatasourceFormModal({
   existing,
   onClose,
   onSaved,
+  onDeleted,
 }: {
   /** Present when editing; absent when adding. */
   existing?: DatasourceSummary;
   onClose: () => void;
   onSaved: (name: string) => void;
+  /** Called after the edited datasource was removed from its configuration layer. */
+  onDeleted?: (name: string) => void;
 }) {
   const isEdit = existing !== undefined;
+  // A datasource whose secret is unset has nothing stored to keep.
+  const hasStoredUrl = isEdit && existing.status !== "missingSecret";
   const [name, setName] = useState(existing?.name ?? "");
   const [url, setUrl] = useState("");
   const [allowWrites, setAllowWrites] = useState(existing?.allowWrites ?? false);
@@ -55,6 +61,11 @@ export default function DatasourceFormModal({
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // The override layer that defines the edited datasource: undefined while
+  // loading, null when neither does (packaged defaults), which can't be deleted here.
+  const [ownerScope, setOwnerScope] = useState<ConfigScope | null | undefined>(undefined);
+  const confirmDialog = useConfirmDialog();
 
   useEffect(() => {
     if (!existing) return;
@@ -67,10 +78,12 @@ export default function DatasourceFormModal({
         if (signal.aborted) return;
         const projectDb = values.overrides.workspace.database as Record<string, unknown> | undefined;
         const userDb = values.overrides.global.database as Record<string, unknown> | undefined;
-        if (configHasDatasource(projectDb, existing.name)) setScope("workspace");
-        else if (configHasDatasource(userDb, existing.name)) setScope("global");
+        const owner = configHasDatasource(projectDb, existing.name) ? "workspace" : configHasDatasource(userDb, existing.name) ? "global" : null;
+        if (owner) setScope(owner);
+        setOwnerScope(owner);
       } catch {
         // Leave the default — the user can still pick a scope manually.
+        setOwnerScope(null);
       }
     })();
     return () => abortController.abort();
@@ -79,7 +92,7 @@ export default function DatasourceFormModal({
   const trimmedName = name.trim();
   const trimmedUrl = url.trim();
   // On edit an untouched URL means "keep what's stored", so it isn't required.
-  const canSave = trimmedName !== "" && (isEdit || trimmedUrl !== "");
+  const canSave = trimmedName !== "" && (hasStoredUrl || trimmedUrl !== "");
 
   const writeConfig = async (): Promise<boolean> => {
     const result = await updateConfigLayer(scope, overrides => {
@@ -110,25 +123,66 @@ export default function DatasourceFormModal({
     return true;
   };
 
+  /**
+   * Tests first, saves only on success: a typed connection string is dry-run
+   * on the server without being registered; a blank one on edit tests the
+   * stored connection. A failed test leaves the configuration untouched.
+   */
   const handleTest = async () => {
     if (!canSave) return;
     setTesting(true);
     setTestResult(null);
     try {
-      // The server only tests datasources it has, so save first. That makes Test
-      // a save-then-verify, which is also what the user wants after an edit.
-      if (!(await writeConfig())) return;
-      const result = await databaseRPCClient.testConnection({ datasource: trimmedName });
-      setTestResult(
-        result.ok
-          ? { ok: true, message: `Connected — ${result.tableCount ?? 0} table${result.tableCount === 1 ? "" : "s"} found` }
-          : { ok: false, message: result.error ?? "Connection failed" },
+      const result = await databaseRPCClient.testConnection(
+        trimmedUrl !== "" ? { datasource: trimmedName, url: trimmedUrl } : { datasource: existing?.name ?? trimmedName },
       );
-      if (result.ok) onSaved(trimmedName);
+      if (!result.ok) {
+        setTestResult({ ok: false, message: `${result.error ?? "Connection failed"} — not saved.` });
+        return;
+      }
+      if (!(await writeConfig())) return;
+      const tables = result.tableCount ?? 0;
+      toastManager.success(`Datasource "${trimmedName}" saved — connected, ${tables} table${tables === 1 ? "" : "s"} found`, { duration: 3000 });
+      onSaved(trimmedName);
+      onClose();
     } catch (err) {
       setTestResult({ ok: false, message: formatError(err) });
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!isEdit || !ownerScope) return;
+    const confirmed = await confirmDialog.openConfirm({
+      title: "Delete datasource?",
+      message: `Remove "${existing.name}" from the ${ownerScope === "workspace" ? "project" : "user"} configuration? The database itself is not touched.`,
+      confirmText: "Delete",
+      variant: "danger",
+      dontAskAgain: false,
+    });
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      const result = await updateConfigLayer(ownerScope, overrides => {
+        const previousDatabase = (overrides.database as Record<string, unknown> | undefined) ?? {};
+        const datasources = datasourcesMapFromConfig(previousDatabase);
+        delete datasources[existing.name];
+        const database: Record<string, unknown> = { datasources };
+        if (Array.isArray(previousDatabase.agentTypes)) database.agentTypes = previousDatabase.agentTypes;
+        return { ...overrides, database };
+      });
+      if (!result.ok) {
+        toastManager.error(formatConfigIssues(result.issues), { duration: 6000 });
+        return;
+      }
+      toastManager.success(`Datasource "${existing.name}" deleted`, { duration: 3000 });
+      onDeleted?.(existing.name);
+      onClose();
+    } catch (err) {
+      toastManager.error(formatError(err), { duration: 5000 });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -147,15 +201,34 @@ export default function DatasourceFormModal({
     }
   };
 
-  const busy = saving || testing;
+  const busy = saving || testing || deleting;
+
+  // Escape closes, unless a request is in flight or the delete confirmation is on top.
+  const confirmOpen = confirmDialog.isOpen;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || busy || confirmOpen || event.defaultPrevented) return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [busy, confirmOpen, onClose]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-lg bg-secondary border border-primary rounded-2xl shadow-card overflow-hidden">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="datasource-form-title"
+        className="w-full max-w-lg bg-secondary border border-primary rounded-2xl shadow-card overflow-hidden"
+      >
         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-primary">
           <div className="flex items-center gap-2.5 min-w-0">
             <Database className="w-4 h-4 text-cyan-400 shrink-0" />
-            <h2 className="text-base font-semibold text-primary truncate">{isEdit ? `Edit ${existing.name}` : "Add datasource"}</h2>
+            <h2 id="datasource-form-title" className="text-base font-semibold text-primary truncate">
+              {isEdit ? `Edit ${existing.name}` : "Add datasource"}
+            </h2>
           </div>
           <button
             type="button"
@@ -192,15 +265,15 @@ export default function DatasourceFormModal({
               id="datasource-url"
               value={url}
               onChange={setUrl}
-              placeholder={isEdit ? "•••••••• (leave blank to keep current)" : CONNECTION_STRING_PLACEHOLDER}
+              placeholder={hasStoredUrl ? "•••••••• (leave blank to keep current)" : CONNECTION_STRING_PLACEHOLDER}
               autoComplete="off"
               spellCheck={false}
               inputClassName="py-2 text-sm"
             />
             <p className="text-xs text-muted mt-1">
-              {isEdit
+              {hasStoredUrl
                 ? "Stored securely on the server and never sent back to the browser. Leave blank to keep the current one."
-                : "Stored securely on the server. Only MySQL and MariaDB are supported today."}
+                : "Stored securely on the server. Supports MySQL/MariaDB (mysql://), PostgreSQL (postgres://) and SQLite (sqlite:///path/to/file.db)."}
             </p>
           </div>
 
@@ -251,7 +324,7 @@ export default function DatasourceFormModal({
             type="button"
             onClick={() => void handleSave()}
             disabled={!canSave || busy}
-            className="flex items-center gap-2 px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 focus-ring shadow-button-primary"
+            className="flex items-center gap-2 px-4 py-2 btn-accent text-sm font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 focus-ring shadow-button-primary"
           >
             {saving ? (
               <>
@@ -272,9 +345,20 @@ export default function DatasourceFormModal({
                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> Testing…
               </>
             ) : (
-              "Save & test"
+              "Test & save"
             )}
           </button>
+          {isEdit && (
+            <button
+              type="button"
+              onClick={() => void handleDelete()}
+              disabled={busy || !ownerScope}
+              title={ownerScope === null ? "Defined outside the project and user configuration; remove it where it is defined" : `Delete ${existing.name}`}
+              className="flex items-center gap-1.5 px-3 py-2 text-red-400 hover:bg-red-500/10 text-sm font-medium rounded-lg transition-colors cursor-pointer disabled:opacity-50 focus-ring"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -285,6 +369,7 @@ export default function DatasourceFormModal({
           </button>
         </div>
       </div>
+      <confirmDialog.Dialog />
     </div>
   );
 }

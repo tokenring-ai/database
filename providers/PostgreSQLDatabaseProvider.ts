@@ -3,14 +3,22 @@ import type {
   DataSource,
   DataSourceOptions,
   ExecuteSqlResult,
+  RowMutation,
+  RowMutationResult,
   SelectRowsRequest,
   SelectRowsResult,
   TableRef,
   TableSchema,
 } from "@tokenring-ai/database/types";
+import buildMutation from "@tokenring-ai/database/util/buildMutation";
 import buildSelect, { dollarPlaceholder, doubleQuoteIdentifier } from "@tokenring-ai/database/util/buildSelect";
 import normalizeCellValue, { normalizeCount, normalizeRows } from "@tokenring-ai/database/util/normalizeCellValue";
 import { SQL } from "bun";
+
+/** Quotes a resolved table ref. Schema and name are quoted separately so a dot inside either stays inside its identifier. */
+function quotedQualifiedTable(table: TableRef): string {
+  return table.schema ? `${doubleQuoteIdentifier(table.schema)}.${doubleQuoteIdentifier(table.name)}` : doubleQuoteIdentifier(table.name);
+}
 
 /**
  * Quotes an optional `schema.table` ref as `"schema"."table"`, or a bare table
@@ -54,10 +62,12 @@ export default class PostgreSQLDatabaseProvider implements DataSource {
   async executeSql(sqlQuery: string): Promise<ExecuteSqlResult> {
     const result = await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
     const rows = normalizeRows(result);
+    const affectedRows = (result as { count?: unknown }).count;
 
     return {
       rows,
       fields: rows.length > 0 ? Object.keys(rows[0]!) : [],
+      ...(typeof affectedRows === "number" ? { affectedRows } : {}),
     };
   }
 
@@ -186,6 +196,23 @@ export default class PostgreSQLDatabaseProvider implements DataSource {
       this.schemaCache.set(resolved.name, tableSchema);
     }
     return tableSchema;
+  }
+
+  async mutateRow(mutation: RowMutation): Promise<RowMutationResult> {
+    const schema = await this.getTableSchema(mutation.table);
+    // Quote the catalog's schema and table separately. Joining them with a dot
+    // and splitting again would break a name that itself contains a dot, and
+    // quoting the whole `schema.table` string looks up a different relation.
+    const qualified = quotedQualifiedTable(schema.table);
+    const built = buildMutation(mutation, schema, {
+      quoteIdentifier: doubleQuoteIdentifier,
+      quoteTable: () => qualified,
+      parameterPlaceholder: dollarPlaceholder,
+    });
+    // No RETURNING: the command tag's `count` is already the number of rows
+    // inserted, updated, or deleted, and RETURNING would require SELECT.
+    const result = await this.sql.unsafe<Record<string, unknown>[]>(built.sql, built.params);
+    return { affectedRows: normalizeCount((result as { count?: unknown }).count) };
   }
 
   async selectRows(request: SelectRowsRequest): Promise<SelectRowsResult> {
