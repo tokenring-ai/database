@@ -13,31 +13,12 @@ import type {
 import buildMutation from "@tokenring-ai/database/util/buildMutation";
 import buildSelect, { dollarPlaceholder, doubleQuoteIdentifier } from "@tokenring-ai/database/util/buildSelect";
 import normalizeCellValue, { normalizeCount, normalizeRows } from "@tokenring-ai/database/util/normalizeCellValue";
+import { formatTableRef, parseTableRef } from "@tokenring-ai/database/util/tableRef";
 import { SQL } from "bun";
 
 /** Quotes a resolved table ref. Schema and name are quoted separately so a dot inside either stays inside its identifier. */
 function quotedQualifiedTable(table: TableRef): string {
   return table.schema ? `${doubleQuoteIdentifier(table.schema)}.${doubleQuoteIdentifier(table.name)}` : doubleQuoteIdentifier(table.name);
-}
-
-/**
- * Quotes an optional `schema.table` ref as `"schema"."table"`, or a bare table
- * as `"table"`. Column names never go through this — only the FROM target.
- */
-function quoteTableRef(table: string): string {
-  const dot = table.indexOf(".");
-  if (dot > 0 && dot < table.length - 1 && !table.includes(".", dot + 1)) {
-    return `${doubleQuoteIdentifier(table.slice(0, dot))}.${doubleQuoteIdentifier(table.slice(dot + 1))}`;
-  }
-  return doubleQuoteIdentifier(table);
-}
-
-function parseTableRef(table: string): { schema: string | null; name: string } {
-  const dot = table.indexOf(".");
-  if (dot > 0 && dot < table.length - 1 && !table.includes(".", dot + 1)) {
-    return { schema: table.slice(0, dot), name: table.slice(dot + 1) };
-  }
-  return { schema: null, name: table };
 }
 
 export default class PostgreSQLDatabaseProvider implements DataSource {
@@ -76,7 +57,7 @@ export default class PostgreSQLDatabaseProvider implements DataSource {
     const schema: Record<string, string> = {};
 
     for (const table of tables) {
-      const key = table.schema ? `${table.schema}.${table.name}` : table.name;
+      const key = formatTableRef(table);
       try {
         const tableSchema = await this.getTableSchema(key);
         schema[key] = tableSchema.ddl ?? synthesizeCreateTable(tableSchema);
@@ -217,12 +198,13 @@ export default class PostgreSQLDatabaseProvider implements DataSource {
 
   async selectRows(request: SelectRowsRequest): Promise<SelectRowsResult> {
     const { columns, table } = await this.getTableSchema(request.table);
-    // Prefer the fully-qualified name so FROM is unambiguous when the same
-    // table name exists in multiple schemas.
-    const qualifiedTable = table.schema ? `${table.schema}.${table.name}` : table.name;
-    const built = buildSelect({ ...request, table: qualifiedTable }, columns, {
+    // Quote the catalog's schema and name separately. Joining them and splitting
+    // on `.` would treat a dot inside the name as a schema separator, and would
+    // pick the wrong relation when the same name exists in another schema.
+    const qualified = quotedQualifiedTable(table);
+    const built = buildSelect(request, columns, {
       quoteIdentifier: doubleQuoteIdentifier,
-      quoteTable: quoteTableRef,
+      quoteTable: () => qualified,
       parameterPlaceholder: dollarPlaceholder,
     });
 
@@ -264,8 +246,9 @@ export default class PostgreSQLDatabaseProvider implements DataSource {
   }
 
   /**
-   * Resolves a bare table name or `schema.table` against the catalog.
+   * Resolves a bare name or a schema-qualified ref ({@link parseTableRef}).
    * Bare names prefer `current_schema()`, then any non-system schema.
+   * A quoted `.` stays inside the identifier, so it is not a schema separator.
    */
   private async resolveTable(table: string): Promise<{ schema: string; name: string; type: "table" | "view" }> {
     const parsed = parseTableRef(table);

@@ -1,18 +1,17 @@
 import AgentLaunchPanel from "@tokenring-ai/one-frontend/components/ui/AgentLaunchPanel.tsx";
-import EmptyState from "@tokenring-ai/one-frontend/components/ui/EmptyState.tsx";
 import PaginationControls from "@tokenring-ai/one-frontend/components/ui/PaginationControls.tsx";
 import ViewHeader from "@tokenring-ai/one-frontend/components/ui/ViewHeader.tsx";
 import ViewShell from "@tokenring-ai/one-frontend/components/ui/ViewShell.tsx";
-import type { ViewProps } from "@tokenring-ai/one-frontend/dock/types.ts";
 import { useConfirmDialog } from "@tokenring-ai/one-frontend/hooks/useConfirmDialog.tsx";
 import { useCyclicSort } from "@tokenring-ai/one-frontend/hooks/useCyclicSort.ts";
 import { useDebounce } from "@tokenring-ai/one-frontend/hooks/useDebounce.ts";
+import type { ViewProps } from "@tokenring-ai/one-frontend/layout/define.ts";
+import { usePanel } from "@tokenring-ai/one-frontend/layout/hooks.ts";
 import { databaseRPCClient, useDatabaseConfiguration, useTableRows, useTableSchema } from "@tokenring-ai/one-frontend/rpc.ts";
 import { toastManager } from "@tokenring-ai/one-frontend/ui";
 import formatError from "@tokenring-ai/utility/error/formatError";
-import { Columns3, Lock, Plus, Table2 } from "lucide-react";
+import { Columns3, Lock, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { DatabaseTableParams } from "../app.tsx";
 import FilterBar from "../features/database/components/FilterBar.tsx";
 import RowDetailPane from "../features/database/components/RowDetailPane.tsx";
 import RowEditPane from "../features/database/components/RowEditPane.tsx";
@@ -21,8 +20,9 @@ import { DATABASE_AGENT_TYPE, PAGE_SIZE } from "../features/database/constants.t
 import { draftFiltersToQuery } from "../features/database/filterQuery.ts";
 import { rowEditBlockReason, rowKey } from "../features/database/rowEdit.ts";
 import type { CellValue, DraftFilter, Row } from "../features/database/types.ts";
-import { syncAgentDatabaseState, useDatabaseNavigation } from "../lib/databaseShared.tsx";
 import { requestDatabaseAgent, useDatabaseAgentState } from "../lib/databaseStore.ts";
+import { syncAgentDatabaseState } from "../lib/syncAgentState.ts";
+import { useDatabaseLayoutNavigation } from "../lib/useDatabaseLayoutNavigation.ts";
 
 const FILTER_DEBOUNCE_MS = 300;
 
@@ -46,13 +46,12 @@ function rowKeyOf(row: Row, primaryKey: string[]): string {
 
 /**
  * One table per panel: filter bar, row grid and the single-row detail pane.
- * Opened without params it is the dashboard's placeholder, which the next
- * table picked in the tree fills in place.
  */
-export default function DatabaseTableView({ params, panel }: ViewProps<DatabaseTableParams>) {
+export default function DatabaseTablePane({ params }: ViewProps) {
+  const panel = usePanel();
   const datasource = params.datasource ?? null;
   const table = params.table ?? null;
-  const { openAgentChat, openSchema } = useDatabaseNavigation();
+  const { openAgentChat, openSchema } = useDatabaseLayoutNavigation();
   const { attachedAgentId } = useDatabaseAgentState();
 
   const configuration = useDatabaseConfiguration();
@@ -66,7 +65,7 @@ export default function DatabaseTableView({ params, panel }: ViewProps<DatabaseT
   const debouncedFilters = useDebounce(draftFilters, FILTER_DEBOUNCE_MS);
   const appliedFilters = draftFilters.length === 0 ? draftFilters : debouncedFilters;
   const [offset, setOffset] = useState(0);
-  const { orderBy, handleSort, clearSort } = useCyclicSort({ onSortChange: () => setOffset(0) });
+  const { orderBy, handleSort } = useCyclicSort({ onSortChange: () => setOffset(0) });
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [selectedRowsByKey, setSelectedRowsByKey] = useState<Map<string, Row>>(() => new Map());
   const [detailRow, setDetailRow] = useState<Row | null>(null);
@@ -99,23 +98,6 @@ export default function DatabaseTableView({ params, panel }: ViewProps<DatabaseT
   const fields = rowsQuery.data?.fields ?? columns.map(column => column.name);
   const totalCount = rowsQuery.data?.totalCount ?? null;
   const hasMore = rowsQuery.data?.hasMore ?? false;
-
-  // The placeholder panel becomes the table it is filled with.
-  useEffect(() => {
-    panel.setTitle(table ?? "Select a table");
-  }, [panel, table]);
-
-  // Drop selection / paging / filters when the panel changes table (placeholder fill).
-  useEffect(() => {
-    setDraftFilters([]);
-    clearSort();
-    setOffset(0);
-    setSelectedKeys(new Set());
-    setSelectedRowsByKey(new Map());
-    setDetailRow(null);
-    setEditing(null);
-    setSaveError(null);
-  }, [datasource, table, clearSort]);
 
   // Keep the attached agent pointed at what this panel shows while it is the
   // focused one, so the agent's tools act on the same rows the user sees.
@@ -293,20 +275,7 @@ export default function DatabaseTableView({ params, panel }: ViewProps<DatabaseT
     [datasource, keyOf, openConfirm, primaryKey, rowsQuery, table],
   );
 
-  if (!datasource || !table) {
-    return (
-      <EmptyState
-        variant="page"
-        icon={Table2}
-        title="Select a table"
-        hint={
-          datasource
-            ? `Browse the tables under "${datasource}" in the datasource tree to inspect their rows.`
-            : "Pick a datasource in the tree, then one of its tables, to inspect its rows."
-        }
-      />
-    );
-  }
+  if (!datasource || !table) return null;
 
   return (
     <ViewShell

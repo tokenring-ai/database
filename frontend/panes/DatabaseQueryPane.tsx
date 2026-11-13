@@ -5,19 +5,19 @@ import ErrorBanner from "@tokenring-ai/one-frontend/components/ui/ErrorBanner.ts
 import ErrorState from "@tokenring-ai/one-frontend/components/ui/ErrorState.tsx";
 import ViewHeader from "@tokenring-ai/one-frontend/components/ui/ViewHeader.tsx";
 import ViewShell from "@tokenring-ai/one-frontend/components/ui/ViewShell.tsx";
-import type { ViewProps } from "@tokenring-ai/one-frontend/dock/types.ts";
 import { useConfirmDialog } from "@tokenring-ai/one-frontend/hooks/useConfirmDialog.tsx";
 import { useKeyboardShortcuts } from "@tokenring-ai/one-frontend/hooks/useKeyboardShortcuts.ts";
 import { useLocalStorageState } from "@tokenring-ai/one-frontend/hooks/useLocalStorageState.ts";
+import type { ViewProps } from "@tokenring-ai/one-frontend/layout/define.ts";
+import { usePanel } from "@tokenring-ai/one-frontend/layout/hooks.ts";
 import { copyToClipboard } from "@tokenring-ai/one-frontend/lib/clipboard.ts";
 import { cn } from "@tokenring-ai/one-frontend/lib/utils.ts";
 import { databaseRPCClient, useDatabaseConfiguration } from "@tokenring-ai/one-frontend/rpc.ts";
 import { Button, IconButton } from "@tokenring-ai/one-frontend/ui";
 import formatError from "@tokenring-ai/utility/error/formatError";
 import { Copy, History, Lock, Play, RotateCcw, SquareTerminal, Trash2, X } from "lucide-react";
-import { type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useMemo, useRef, useState } from "react";
 import isReadOnlyQuery from "../../util/isReadOnlyQuery.ts";
-import type { DatabaseQueryParams } from "../app.tsx";
 import RowDetailPane from "../features/database/components/RowDetailPane.tsx";
 import type { ColumnDef, Row } from "../features/database/types.ts";
 import { type QueryHistoryEntry, queryDraftKey, useQueryHistory } from "../lib/queryHistory.ts";
@@ -52,8 +52,9 @@ function isCtrlEnter(event: { key: string; ctrlKey: boolean; metaKey: boolean })
  * explicit confirmation, and is refused by the server on a read-only
  * datasource. Results are capped server-side at MAX_ROW_LIMIT rows.
  */
-export default function DatabaseQueryView({ params, panel }: ViewProps<DatabaseQueryParams>) {
-  const { datasource } = params;
+export default function DatabaseQueryPane({ params }: ViewProps) {
+  const panel = usePanel();
+  const datasource = params.datasource ?? "";
   const configuration = useDatabaseConfiguration();
   const datasourceMeta = configuration.data?.datasources.find(entry => entry.name === datasource);
   const allowWrites = datasourceMeta?.allowWrites ?? false;
@@ -72,10 +73,6 @@ export default function DatabaseQueryView({ params, panel }: ViewProps<DatabaseQ
   const history = useQueryHistory(datasource);
   const recordHistory = history.record;
   const { openConfirm, Dialog } = useConfirmDialog();
-
-  useEffect(() => {
-    panel.setTitle(`Query · ${datasource}`);
-  }, [panel, datasource]);
 
   const run = useCallback(
     async (sqlOverride?: string) => {

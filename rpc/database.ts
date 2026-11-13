@@ -159,6 +159,9 @@ export default createRPCEndpoint(DatabaseRpcSchema, {
       if (target) {
         await service.selectTable(target, table, agent);
       }
+    } else {
+      // Omitted table means no table, including when the datasource did not change.
+      service.clearActiveTable(agent);
     }
     if (selectedRows) {
       service.setSelectedRows(selectedRows, agent);

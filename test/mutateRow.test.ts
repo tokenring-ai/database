@@ -223,4 +223,94 @@ describe("PostgreSQLDatabaseProvider.mutateRow", () => {
       },
     );
   });
+
+  it("qualifies SELECT with the catalog schema when the table name contains a dot", async () => {
+    const provider = openPostgres();
+    await withDriver(
+      provider,
+      'analytics."odd.name"',
+      usersSchema({ schema: "analytics", name: "odd.name" }),
+      () => [{ total: 0 }],
+      async calls => {
+        await provider.selectRows({ table: 'analytics."odd.name"', limit: 5, offset: 0 });
+        expect(calls[0]!.sql).toContain('FROM "analytics"."odd.name"');
+        expect(calls[1]!.sql).toContain('FROM "analytics"."odd.name"');
+        expect(calls[0]!.sql).not.toContain('"analytics.odd.name"');
+      },
+    );
+  });
+
+  it("resolves a schema-qualified name outside current_schema, without splitting a quoted dot", async () => {
+    const provider = openPostgres();
+    await withDriver(
+      provider,
+      "unrelated",
+      usersSchema(),
+      call => {
+        if (call.sql.includes("pg_attribute")) {
+          return [
+            {
+              column_name: "id",
+              data_type: "integer",
+              is_nullable: false,
+              column_default: null,
+              column_comment: null,
+              is_primary_key: true,
+            },
+          ];
+        }
+        if (call.sql.includes("information_schema.tables")) {
+          const params = call.params as string[];
+          const schemaName = call.sql.includes("current_schema") ? "public" : params[0];
+          const name = call.sql.includes("current_schema") ? params[0] : params[1];
+          return [{ table_schema: schemaName, table_name: name, table_type: "BASE TABLE" }];
+        }
+        return [];
+      },
+      async calls => {
+        const qualified = await provider.getTableSchema("analytics.users");
+        expect(calls[0]!.params).toEqual(["analytics", "users"]);
+        expect(calls[0]!.sql).not.toContain("current_schema");
+        expect(qualified.table).toMatchObject({ schema: "analytics", name: "users", type: "table" });
+
+        const dotted = await provider.getTableSchema('analytics."odd.name"');
+        expect(calls[2]!.params).toEqual(["analytics", "odd.name"]);
+        expect(calls[2]!.sql).not.toContain("current_schema");
+        expect(dotted.table).toMatchObject({ schema: "analytics", name: "odd.name" });
+
+        const quotedBare = await provider.getTableSchema('"odd.name"');
+        expect(calls[4]!.params).toEqual(["odd.name"]);
+        expect(calls[4]!.sql).toContain("current_schema");
+        expect(quotedBare.table).toMatchObject({ schema: "public", name: "odd.name" });
+      },
+    );
+  });
+});
+
+describe("MySQLDatabaseProvider.executeSql", () => {
+  it("reports the OK-packet affectedRows, not the result-set count of a write", async () => {
+    const provider = openMySQL();
+    await withDriver(
+      provider,
+      "users",
+      usersSchema(),
+      () => Object.assign([], { count: 0, affectedRows: 4 }),
+      async () => {
+        expect(await provider.executeSql("UPDATE users SET email = 'a'")).toMatchObject({ rows: [], affectedRows: 4 });
+      },
+    );
+  });
+
+  it("falls back to count when the driver omits affectedRows", async () => {
+    const provider = openMySQL();
+    await withDriver(
+      provider,
+      "users",
+      usersSchema(),
+      () => Object.assign([{ id: 1 }], { count: 1 }),
+      async () => {
+        expect(await provider.executeSql("SELECT id FROM users")).toMatchObject({ rows: [{ id: 1 }], affectedRows: 1 });
+      },
+    );
+  });
 });

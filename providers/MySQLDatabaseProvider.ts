@@ -40,12 +40,14 @@ export default class MySQLDatabaseProvider implements DataSource {
   async executeSql(sqlQuery: string): Promise<ExecuteSqlResult> {
     const result = await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
     const rows = normalizeRows(result);
-    const affectedRows = (result as { count?: unknown }).count;
+    // `count` is the result-set size (0 for a write). The OK packet's row count
+    // is `affectedRows` — the same number mutateRow reports.
+    const affectedRows = writeAffectedRows(result);
 
     return {
       rows,
       fields: rows.length > 0 ? Object.keys(rows[0]!) : [],
-      ...(typeof affectedRows === "number" ? { affectedRows } : {}),
+      ...(affectedRows !== null ? { affectedRows } : {}),
     };
   }
 

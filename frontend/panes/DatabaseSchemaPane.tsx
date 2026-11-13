@@ -4,32 +4,28 @@ import LoadingState from "@tokenring-ai/one-frontend/components/ui/LoadingState.
 import SearchInput from "@tokenring-ai/one-frontend/components/ui/SearchInput.tsx";
 import ViewHeader from "@tokenring-ai/one-frontend/components/ui/ViewHeader.tsx";
 import ViewShell from "@tokenring-ai/one-frontend/components/ui/ViewShell.tsx";
-import type { ViewProps } from "@tokenring-ai/one-frontend/dock/types.ts";
+import type { ViewProps } from "@tokenring-ai/one-frontend/layout/define.ts";
 import { useTableSchema } from "@tokenring-ai/one-frontend/rpc.ts";
 import { Button } from "@tokenring-ai/one-frontend/ui";
 import { Columns3, KeyRound, RefreshCw, SquareTerminal, Table2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import type { DatabaseSchemaParams } from "../app.tsx";
+import { useMemo, useState } from "react";
 import { useDatasourceDdl } from "../lib/databaseQueries.ts";
-import { useDatabaseNavigation } from "../lib/databaseShared.tsx";
+import { useDatabaseLayoutNavigation } from "../lib/useDatabaseLayoutNavigation.ts";
 
 /**
  * Schema browser. With a table: its columns (name, type, nullability, default,
  * primary key, comment) and its DDL. Without: the DDL of every table of the
  * datasource (`showSchema`), each linking to its columns.
  */
-export default function DatabaseSchemaView({ params, panel }: ViewProps<DatabaseSchemaParams>) {
-  const { datasource, table } = params;
-
-  useEffect(() => {
-    panel.setTitle(table ? `${table} columns` : `Schema · ${datasource}`);
-  }, [panel, datasource, table]);
+export default function DatabaseSchemaPane({ params }: ViewProps) {
+  const datasource = params.datasource ?? "";
+  const table = params.table;
 
   return table ? <TableColumns datasource={datasource} table={table} /> : <DatasourceDdl datasource={datasource} />;
 }
 
 function TableColumns({ datasource, table }: { datasource: string; table: string }) {
-  const { openTable, openQuery } = useDatabaseNavigation();
+  const { openTable, openQuery } = useDatabaseLayoutNavigation();
   const schemaQuery = useTableSchema(datasource, table);
   const schema = schemaQuery.data?.schema;
 
@@ -119,7 +115,7 @@ function TableColumns({ datasource, table }: { datasource: string; table: string
 }
 
 function DatasourceDdl({ datasource }: { datasource: string }) {
-  const { openSchema } = useDatabaseNavigation();
+  const { openSchema } = useDatabaseLayoutNavigation();
   const ddlQuery = useDatasourceDdl(datasource);
   const [filter, setFilter] = useState("");
   const entries = useMemo(() => {

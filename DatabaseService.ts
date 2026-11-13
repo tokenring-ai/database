@@ -133,6 +133,20 @@ export default class DatabaseService implements TokenRingService {
     });
   }
 
+  /**
+   * Drops the active table. `setActiveDatasource` only does this when the
+   * datasource changes, so a caller that omits `table` on the same datasource
+   * has to clear it here.
+   */
+  clearActiveTable(agent: Agent): void {
+    agent.mutateState(DatabaseState, state => {
+      if (state.activeTable === undefined && state.activeTableSchema === undefined && state.selectedRows.length === 0) return;
+      state.activeTable = undefined;
+      state.activeTableSchema = undefined;
+      state.selectedRows = [];
+    });
+  }
+
   /** Selects a table and caches its schema on the agent so the hook can attach it. */
   async selectTable(datasourceName: string, table: string, agent: Agent): Promise<TableSchema> {
     const datasource = this.requireDataSource(datasourceName);

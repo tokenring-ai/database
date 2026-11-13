@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { DashboardDefinition, ViewDefinition, ViewParams } from "@tokenring-ai/one-frontend/dock/types.ts";
-import { createFakeDashboardApi, createFakePanelHandle, type FakeDashboardApi, renderView } from "@tokenring-ai/one-frontend/test/dock.tsx";
+import { defineView } from "@tokenring-ai/one-frontend/layout/define.ts";
+import { createLayoutRegistry } from "@tokenring-ai/one-frontend/layout/registry.ts";
+import { renderLayoutApp } from "@tokenring-ai/one-frontend/test/layout.tsx";
+import { MessageSquare } from "lucide-react";
 import type React from "react";
+import { SWRConfig } from "swr";
 
 // focus-trap refuses to activate in jsdom.
 const PassThroughFocusTrap = ({ children }: { children: React.ReactNode }) => children;
@@ -20,7 +23,7 @@ const state = {
   tables: [
     { name: "users", schema: "app", type: "table" as const },
     { name: "user_stats", schema: "app", type: "view" as const },
-  ],
+  ] as Array<{ name: string; schema?: string; type: "table" | "view" }>,
   columns: [
     { name: "id", dataType: "int", nullable: false, isPrimaryKey: true },
     { name: "email", dataType: "varchar", nullable: true, isPrimaryKey: false },
@@ -133,108 +136,138 @@ void mock.module("@tokenring-ai/one-frontend/rpc.ts", () => ({
   useAgentTypes: () => ({ data: [{ type: "database", displayName: "Database Agent", description: "", enabledTools: [] }], isLoading: false }),
 }));
 
-const { default: contribution, databaseTableInstanceKey } = await import("../app.tsx");
-const { resetDatabaseStore, setAttachedDatabaseAgent } = await import("../lib/databaseStore.ts");
+const { DATABASE_APP } = await import("../layout.ts");
+const { default: databaseViews } = await import("../views.tsx");
+const { databaseTableInstanceKey } = await import("../lib/instanceKeys.ts");
+const { resetDatabaseStore } = await import("../lib/databaseStore.ts");
 
-const viewById = (id: string) => contribution.views.find(view => view.id === id) as ViewDefinition<any>;
-const getView = (id: string) => contribution.views.find(view => view.id === id);
-const dashboard: DashboardDefinition = contribution.dashboards[0]!;
-
-function fakeApi(dashboardId = "database"): FakeDashboardApi {
-  return createFakeDashboardApi({ dashboardId, getView });
+function ChatStub() {
+  return <p>chat stub</p>;
 }
 
-function renderDatabaseView(viewId: string, params: ViewParams = {}, path = "/database", api = fakeApi()) {
-  const panel = createFakePanelHandle({ viewId, dashboardId: api.dashboardId, panelId: `${viewId}:${JSON.stringify(params)}`, params });
-  return renderView(viewById(viewId), params, { api, panel, path, routes: ["/database/:datasource?/:table?"] });
+const chatView = defineView({
+  id: "chat",
+  kind: "agent",
+  title: params => params.agentId ?? "Chat",
+  icon: MessageSquare,
+  route: "agent/:agentId",
+  instanceKey: params => params.agentId ?? "",
+  component: ChatStub,
+});
+
+const registry = createLayoutRegistry({
+  apps: [DATABASE_APP],
+  views: [...databaseViews.views, chatView],
+  kinds: [
+    { id: "navigator", label: "Navigators", plural: "navigators" },
+    { id: "agent", label: "Agents", plural: "agent chats" },
+    { id: "database", label: "Database views", plural: "database views" },
+  ],
+});
+
+function Fresh({ children }: { children: React.ReactNode }) {
+  return <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig>;
 }
 
-const pathname = () => screen.getByTestId("pathname").textContent;
+const renderApp = (url = "/database") => renderLayoutApp({ registry, url, wrapper: Fresh });
+const tab = (name: string | RegExp) => screen.queryByRole("tab", { name });
 
-describe("Database dashboard views", () => {
-  beforeEach(() => {
-    localStorage.clear();
-    resetDatabaseStore();
-    rowQueries.length = 0;
-    for (const fn of [updateDatabaseState, applyConfig, getConfigValues, createAgent, mutateConfiguration, mutateTables, testConnection, executeSql])
-      fn.mockClear();
-    executeSql.mockImplementation(async () => executeSqlSuccess);
-    testConnection.mockImplementation(async () => ({ ok: true, tableCount: 2 }));
-    getConfigValues.mockImplementation(async () => ({ overrides: { workspace: {}, global: {} } }));
-    state.rowsError = undefined;
-    state.agents = [];
-    state.datasources = [
-      { name: "primary", scheme: "mysql", allowWrites: true, status: "ready" },
-      { name: "reports", scheme: "mysql", allowWrites: false, status: "ready" },
-    ];
+function resetState() {
+  localStorage.clear();
+  resetDatabaseStore();
+  rowQueries.length = 0;
+  for (const fn of [updateDatabaseState, applyConfig, getConfigValues, createAgent, mutateConfiguration, mutateTables, testConnection, executeSql, mutateRow])
+    fn.mockClear();
+  executeSql.mockImplementation(async () => executeSqlSuccess);
+  mutateRow.mockImplementation(async () => ({ status: "success", affectedRows: 1 }));
+  testConnection.mockImplementation(async () => ({ ok: true, tableCount: 2 }));
+  getConfigValues.mockImplementation(async () => ({ overrides: { workspace: {}, global: {} } }));
+  state.rowsError = undefined;
+  state.agents = [];
+  state.datasources = [
+    { name: "primary", scheme: "mysql", allowWrites: true, status: "ready" },
+    { name: "reports", scheme: "mysql", allowWrites: false, status: "ready" },
+  ];
+  state.tables = [
+    { name: "users", schema: "app", type: "table" },
+    { name: "user_stats", schema: "app", type: "view" },
+  ];
+}
+
+async function openQuery(user: ReturnType<typeof userEvent.setup>, datasource: string) {
+  renderApp();
+  await user.click(await screen.findByRole("button", { name: `Query ${datasource}` }));
+  await screen.findByRole("textbox", { name: "SQL editor" });
+}
+
+describe("Database app", () => {
+  beforeEach(resetState);
+
+  describe("routes", () => {
+    it("resolves every old URL shape", () => {
+      expect(registry.routes.resolve("/database")).toMatchObject({ app: "database", viewId: "database-start" });
+      expect(registry.routes.resolve("/database/primary")).toMatchObject({ viewId: "database-start", params: { datasource: "primary" } });
+      expect(registry.routes.resolve("/database/primary/users")).toMatchObject({ viewId: "database-table", params: { datasource: "primary", table: "users" } });
+      expect(registry.routes.resolve("/database/primary/-/query")).toMatchObject({ viewId: "database-query", params: { datasource: "primary" } });
+      expect(registry.routes.resolve("/database/primary/-/schema")).toMatchObject({ viewId: "database-schema", params: { datasource: "primary" } });
+      expect(registry.routes.resolve("/database/primary/-/schema/users")).toMatchObject({
+        viewId: "database-schema",
+        params: { datasource: "primary", table: "users" },
+      });
+      expect(registry.routes.urlFor("database", "database-table", { datasource: "a/b", table: "c" })).toBe("/database/a%2Fb/c");
+    });
+
+    it("keys table panels unambiguously when names contain a slash", () => {
+      expect(databaseTableInstanceKey({ datasource: "a/b", table: "c" })).not.toBe(databaseTableInstanceKey({ datasource: "a", table: "b/c" }));
+      expect(databaseTableInstanceKey({ datasource: "primary", table: "users" })).toBe("primary/users");
+    });
   });
 
   describe("datasource tree", () => {
     it("lists datasources and expands the first one until the URL names another", async () => {
-      renderDatabaseView("datasource-tree");
+      renderApp();
 
       expect(await screen.findByText("primary")).toBeInTheDocument();
       expect(screen.getByText("reports")).toBeInTheDocument();
-      // Tables of the expanded datasource only.
       expect(screen.getByText("users")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Open datasource primary" })).toHaveAttribute("aria-expanded", "true");
       expect(screen.getByRole("button", { name: "Open datasource reports" })).toHaveAttribute("aria-expanded", "false");
+      expect(screen.getAllByText("Select a table").length).toBeGreaterThan(0);
     });
 
-    it("opens a table panel in the main area and keeps the URL in step", async () => {
+    it("opens a table tab, navigates, and closes the landing tab", async () => {
       const user = userEvent.setup();
-      const { api } = renderDatabaseView("datasource-tree");
+      const app = renderApp();
+      expect(tab("Select a table")).toBeInTheDocument();
 
       await user.click(await screen.findByText("users"));
 
-      expect(api.opened).toEqual([expect.objectContaining({ viewId: "database-table", params: { datasource: "primary", table: "users" } })]);
-      expect(pathname()).toBe("/database/primary/users");
+      expect(app.location().pathname).toBe("/database/primary/users");
+      await waitFor(() => expect(tab(/users/)).toBeInTheDocument());
+      expect(tab("Select a table")).not.toBeInTheDocument();
     });
 
-    it("fills the placeholder panel instead of opening a second table panel", async () => {
+    it("selecting a datasource only navigates; no table tab is opened", async () => {
       const user = userEvent.setup();
-      const api = fakeApi();
-      api.panels.push({ panelId: "database-table:new", viewId: "database-table", params: {}, title: "Select a table" });
-      renderDatabaseView("datasource-tree", {}, "/database", api);
-
-      await user.click(await screen.findByText("users"));
-
-      expect(api.opened).toHaveLength(0);
-      expect(api.panels[0]!.params).toEqual({ datasource: "primary", table: "users" });
-    });
-
-    it("selecting a datasource only navigates; no table panel is opened", async () => {
-      const user = userEvent.setup();
-      const { api } = renderDatabaseView("datasource-tree");
+      const app = renderApp();
 
       await user.click(await screen.findByRole("button", { name: "Open datasource reports" }));
 
-      expect(api.opened).toHaveLength(0);
-      expect(pathname()).toBe("/database/reports");
+      expect(app.location().pathname).toBe("/database/reports");
+      expect(screen.getByRole("button", { name: "Open datasource reports" })).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByText(/under "reports"/)).toBeInTheDocument();
     });
 
     it("highlights the datasource and table named by the URL", async () => {
-      renderDatabaseView("datasource-tree", {}, "/database/reports/users");
+      renderApp("/database/reports/users");
 
       expect(await screen.findByRole("button", { name: "Open datasource reports" })).toHaveAttribute("aria-expanded", "true");
       expect(screen.getByRole("button", { name: "users" })).toHaveAttribute("aria-current", "true");
     });
 
-    it("only navigates, and hides agent sessions, outside the Database dashboard", async () => {
-      const user = userEvent.setup();
-      const api = fakeApi("home");
-      renderDatabaseView("datasource-tree", {}, "/database", api);
-
-      await user.click(await screen.findByText("users"));
-
-      expect(api.opened).toHaveLength(0);
-      expect(pathname()).toBe("/database/primary/users");
-      expect(screen.queryByText("Database agents")).not.toBeInTheDocument();
-    });
-
     it("adds a datasource through the form and opens it", async () => {
       const user = userEvent.setup();
-      renderDatabaseView("datasource-tree");
+      const app = renderApp();
 
       await user.click(await screen.findByRole("button", { name: "Add datasource" }));
       await user.type(screen.getByLabelText("Name"), "analytics");
@@ -244,13 +277,13 @@ describe("Database dashboard views", () => {
       await waitFor(() => expect(applyConfig).toHaveBeenCalledTimes(1));
       const overrides = applyConfig.mock.calls[0]![0]!.overrides as { database: { datasources: Record<string, unknown> } };
       expect(Object.keys(overrides.database.datasources)).toEqual(["analytics"]);
-      await waitFor(() => expect(pathname()).toBe("/database/analytics"));
+      await waitFor(() => expect(app.location().pathname).toBe("/database/analytics"));
     });
 
     it("tests a new connection string before saving and saves nothing when it fails", async () => {
       const user = userEvent.setup();
       testConnection.mockImplementation(async () => ({ ok: false, error: "connection refused" }));
-      renderDatabaseView("datasource-tree");
+      const app = renderApp();
 
       await user.click(await screen.findByRole("button", { name: "Add datasource" }));
       expect(screen.getByText(/PostgreSQL/)).toBeInTheDocument();
@@ -263,17 +296,16 @@ describe("Database dashboard views", () => {
       expect(applyConfig).not.toHaveBeenCalled();
       expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-      // A passing test saves and closes the modal.
       testConnection.mockImplementation(async () => ({ ok: true, tableCount: 3 }));
       await user.click(screen.getByRole("button", { name: "Test & save" }));
       await waitFor(() => expect(applyConfig).toHaveBeenCalledTimes(1));
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-      await waitFor(() => expect(pathname()).toBe("/database/analytics"));
+      await waitFor(() => expect(app.location().pathname).toBe("/database/analytics"));
     });
 
     it("closes the datasource form on Escape", async () => {
       const user = userEvent.setup();
-      renderDatabaseView("datasource-tree");
+      renderApp();
 
       await user.click(await screen.findByRole("button", { name: "Add datasource" }));
       expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -284,18 +316,17 @@ describe("Database dashboard views", () => {
     it("lists a datasource whose secret is unset with a badge and a fix action", async () => {
       const user = userEvent.setup();
       state.datasources = [{ name: "pending", scheme: "unknown", allowWrites: false, status: "missingSecret" }];
-      renderDatabaseView("datasource-tree");
+      renderApp();
 
       expect(await screen.findByText("No connection string")).toBeInTheDocument();
       expect(screen.getByTestId("datasource-missing-secret")).toBeInTheDocument();
       await user.click(screen.getByRole("button", { name: "Set connection string →" }));
-      // Nothing stored to keep, so a connection string is required.
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     });
 
     it("explains the empty state and links to Configuration", async () => {
       state.datasources = [];
-      renderDatabaseView("datasource-tree");
+      renderApp();
 
       expect(await screen.findByText(/browse its tables/)).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Configuration" }).getAttribute("href")).toBe("/configuration");
@@ -306,7 +337,7 @@ describe("Database dashboard views", () => {
       getConfigValues.mockImplementation(async () => ({
         overrides: { workspace: { database: { datasources: { primary: { url: "x", allowWrites: true }, reports: { url: "y" } } } }, global: {} },
       }));
-      renderDatabaseView("datasource-tree");
+      renderApp();
 
       await user.click(await screen.findByRole("button", { name: "Edit primary" }));
       const del = screen.getByRole("button", { name: /Delete/ });
@@ -322,31 +353,73 @@ describe("Database dashboard views", () => {
       expect(Object.keys(call.overrides.database.datasources)).toEqual(["reports"]);
     });
 
-    it("lists agent sessions on the Database dashboard and docks a chat for the attached one", async () => {
+    it("lists agent sessions and opens a chat for the attached one", async () => {
       state.agents = [{ id: "agent-1", createdAt: 1, agentType: "database", displayName: "Database Agent", description: "", idle: true, currentActivity: "" }];
-      const { api } = renderDatabaseView("datasource-tree");
+      renderApp();
 
       expect(await screen.findByText("Database agents")).toBeInTheDocument();
-      await waitFor(() => expect(api.opened.some(open => open.viewId === "chat" && open.params.agentId === "agent-1")).toBe(true));
+      await waitFor(() => expect(tab(/agent-1/)).toBeInTheDocument());
       // With no table open the navigator points the agent at the browsed datasource.
+      // Omitting table is what clears activeTable on the agent.
       await waitFor(() => expect(updateDatabaseState).toHaveBeenCalledWith({ agentId: "agent-1", datasource: "primary", selectedRows: [] }));
     });
-  });
 
-  describe("table view", () => {
-    it("is a placeholder until it has params", async () => {
-      const { panel } = renderDatabaseView("database-table");
+    it("opens a postgres table by schema and name, quoting a dot inside the name", async () => {
+      const user = userEvent.setup();
+      state.datasources = [{ name: "primary", scheme: "postgres", allowWrites: true, status: "ready" }];
+      state.tables = [
+        { name: "users", schema: "public", type: "table" },
+        { name: "users", schema: "analytics", type: "table" },
+        { name: "odd.name", schema: "analytics", type: "table" },
+      ];
+      const app = renderApp();
 
-      expect(await screen.findByText("Select a table")).toBeInTheDocument();
-      expect(panel.title).toBe("Select a table");
+      await user.click(await screen.findByRole("button", { name: "analytics.users" }));
+      expect(app.location().pathname).toBe("/database/primary/analytics.users");
+      expect(screen.getByRole("button", { name: "public.users" })).not.toHaveAttribute("aria-current", "true");
+
+      await user.click(screen.getByRole("button", { name: "analytics.odd.name" }));
+      const dotted = 'analytics."odd.name"';
+      expect(app.location().pathname).toBe(`/database/primary/${encodeURIComponent(dotted)}`);
+
+      await user.click(screen.getByRole("button", { name: "Columns of analytics.odd.name" }));
+      await waitFor(() => expect(tab(/odd\.name"? columns/)).toBeInTheDocument());
     });
 
+    it("highlights only the postgres table whose schema and name are in the URL", async () => {
+      state.datasources = [{ name: "primary", scheme: "postgresql", allowWrites: true, status: "ready" }];
+      state.tables = [
+        { name: "users", schema: "public", type: "table" },
+        { name: "users", schema: "analytics", type: "table" },
+        { name: "odd.name", schema: "analytics", type: "table" },
+      ];
+      const dotted = 'analytics."odd.name"';
+      renderApp(`/database/primary/${encodeURIComponent(dotted)}`);
+
+      expect(await screen.findByRole("button", { name: "analytics.odd.name" })).toHaveAttribute("aria-current", "true");
+      expect(screen.getByRole("button", { name: "analytics.users" })).not.toHaveAttribute("aria-current", "true");
+      expect(screen.getByRole("button", { name: "public.users" })).not.toHaveAttribute("aria-current", "true");
+    });
+
+    it("opens the query editor and table columns from the tree", async () => {
+      const user = userEvent.setup();
+      const app = renderApp();
+
+      await user.click(await screen.findByRole("button", { name: "Query primary" }));
+      await waitFor(() => expect(tab("Query · primary")).toBeInTheDocument());
+      expect(app.location().pathname).toBe("/database/primary/-/query");
+      await user.click(screen.getByRole("button", { name: "Columns of users" }));
+      await waitFor(() => expect(tab("users columns")).toBeInTheDocument());
+      expect(app.location().pathname).toBe("/database/primary/-/schema/users");
+    });
+  });
+  describe("table view", () => {
     it("renders rows for its table and opens the row detail pane", async () => {
       const user = userEvent.setup();
-      const { panel } = renderDatabaseView("database-table", { datasource: "primary", table: "users" }, "/database/primary/users");
+      renderApp("/database/primary/users");
 
       expect(await screen.findByText("ada@example.com")).toBeInTheDocument();
-      expect(panel.title).toBe("users");
+      await waitFor(() => expect(tab("users")).toBeInTheDocument());
       // Read-only badge only for datasources that disallow writes.
       expect(screen.queryByText("Read-only")).not.toBeInTheDocument();
 
@@ -360,7 +433,7 @@ describe("Database dashboard views", () => {
 
     it("opens the row detail from the keyboard through the per-row details button", async () => {
       const user = userEvent.setup();
-      renderDatabaseView("database-table", { datasource: "primary", table: "users" }, "/database/primary/users");
+      renderApp("/database/primary/users");
 
       expect(await screen.findByTestId("row-detail-hint")).toBeInTheDocument();
       const buttons = screen.getAllByRole("button", { name: "Row details" });
@@ -372,13 +445,13 @@ describe("Database dashboard views", () => {
     });
 
     it("marks read-only datasources", async () => {
-      renderDatabaseView("database-table", { datasource: "reports", table: "users" }, "/database/reports/users");
+      renderApp("/database/reports/users");
       expect(await screen.findByText("Read-only")).toBeInTheDocument();
     });
 
     it("sends filters to the row query", async () => {
       const user = userEvent.setup();
-      renderDatabaseView("database-table", { datasource: "primary", table: "users" }, "/database/primary/users");
+      renderApp("/database/primary/users");
 
       await user.click(await screen.findByRole("button", { name: /Filter/ }));
       await user.selectOptions(screen.getByLabelText("Filter column"), "email");
@@ -392,8 +465,8 @@ describe("Database dashboard views", () => {
 
     it("selecting rows offers an agent launch and syncs the selection to the attached agent", async () => {
       const user = userEvent.setup();
-      setAttachedDatabaseAgent("agent-1");
-      renderDatabaseView("database-table", { datasource: "primary", table: "users" }, "/database/primary/users");
+      state.agents = [{ id: "agent-1", createdAt: 1, agentType: "database", displayName: "Database Agent", description: "", idle: true, currentActivity: "" }];
+      renderApp("/database/primary/users");
 
       await user.click(await screen.findByRole("checkbox", { name: "Select row 1" }));
 
@@ -410,236 +483,144 @@ describe("Database dashboard views", () => {
 
     it("shows a retryable error when the rows fail to load", async () => {
       state.rowsError = new Error("connection refused");
-      renderDatabaseView("database-table", { datasource: "primary", table: "users" }, "/database/primary/users");
+      renderApp("/database/primary/users");
 
       expect(await screen.findByText("Failed to load rows")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Retry/i })).toBeInTheDocument();
     });
   });
 
-  describe("dashboard definition", () => {
-    const match = (pathname: string, params: Record<string, string | undefined>) => ({ pathname, params, searchParams: new URLSearchParams() });
+  describe("query and schema views", () => {
+    async function typeSql(user: ReturnType<typeof userEvent.setup>, sql: string) {
+      const editor = await screen.findByRole("textbox", { name: "SQL editor" });
+      await user.clear(editor);
+      await user.type(editor, sql);
+      return editor;
+    }
 
-    it("opens the table named by the route and ignores a datasource on its own", () => {
-      const api = fakeApi();
-      api.panels.push({ panelId: "datasource-tree", viewId: "datasource-tree", params: {}, title: "Datasources" });
+    it("runs a read and shows rows, row count and elapsed time", async () => {
+      const user = userEvent.setup();
+      await openQuery(user, "primary");
 
-      dashboard.onNavigate?.(match("/database/primary", { datasource: "primary" }), api);
-      expect(api.opened).toHaveLength(0);
+      await typeSql(user, "SELECT * FROM users");
+      await user.click(screen.getByRole("button", { name: "Run" }));
 
-      dashboard.onNavigate?.(match("/database/primary/users", { datasource: "primary", table: "users" }), api);
-      expect(api.opened).toEqual([expect.objectContaining({ viewId: "database-table", params: { datasource: "primary", table: "users" } })]);
-      expect(api.opened[0]!.options).toMatchObject({ position: "right", referencePanelId: "datasource-tree" });
-
-      // Idempotent: the same route focuses the panel rather than adding another.
-      dashboard.onNavigate?.(match("/database/primary/users", { datasource: "primary", table: "users" }), api);
-      expect(api.panels.filter(panel => panel.viewId === "database-table")).toHaveLength(1);
+      expect(executeSql).toHaveBeenCalledWith({ datasource: "primary", sql: "SELECT * FROM users" });
+      expect(await screen.findByText("grace@example.com")).toBeInTheDocument();
+      const summary = screen.getByTestId("query-summary");
+      expect(summary).toHaveTextContent("2 rows");
+      expect(summary).toHaveTextContent("12 ms");
+      // No confirmation for a read.
+      expect(screen.queryByRole("button", { name: "Run statement" })).toBeNull();
     });
 
-    it("keys table panels unambiguously when names contain a slash", () => {
-      const key = (datasource: string, table: string) => databaseTableInstanceKey({ datasource, table });
-      expect(key("a/b", "c")).not.toBe(key("a", "b/c"));
-      expect(key("primary", "users")).toBe("primary/users");
-      expect(databaseTableInstanceKey({})).toBe("new");
+    it("runs on Ctrl+Enter from the editor", async () => {
+      const user = userEvent.setup();
+      await openQuery(user, "primary");
 
-      const api = fakeApi();
-      api.panels.push({ panelId: "datasource-tree", viewId: "datasource-tree", params: {}, title: "Datasources" });
-      dashboard.onNavigate?.(match("/database/a%2Fb/c", { datasource: "a/b", table: "c" }), api);
-      dashboard.onNavigate?.(match("/database/a/b%2Fc", { datasource: "a", table: "b/c" }), api);
-      expect(api.panels.filter(panel => panel.viewId === "database-table").map(panel => panel.params)).toEqual([
-        { datasource: "a/b", table: "c" },
-        { datasource: "a", table: "b/c" },
-      ]);
+      const editor = await typeSql(user, "SELECT 1");
+      editor.focus();
+      await user.keyboard("{Control>}{Enter}{/Control}");
+
+      await waitFor(() => expect(executeSql).toHaveBeenCalledTimes(1));
+      expect(executeSql).toHaveBeenCalledWith({ datasource: "primary", sql: "SELECT 1" });
     });
 
-    it("maps the active panel back to a URL", () => {
-      const current = match("/database/primary", { datasource: "primary" });
-      const path = (viewId: string, params: ViewParams = {}) => dashboard.pathForActivePanel?.({ panelId: viewId, viewId, params }, current);
+    it("asks before a statement that can modify data and sends the confirmation", async () => {
+      const user = userEvent.setup();
+      executeSql.mockImplementation(async () => ({ ...executeSqlSuccess, rows: [], fields: [], rowCount: 0, affectedRows: 1, readOnly: false }));
+      await openQuery(user, "primary");
 
-      expect(path("database-table", { datasource: "primary", table: "users" })).toBe("/database/primary/users");
-      // The empty placeholder keeps the datasource the tree is showing.
-      expect(path("database-table")).toBe("/database/primary");
-      expect(path("datasource-tree")).toBeNull();
+      await typeSql(user, "DELETE FROM users WHERE id = 1");
+      await user.click(screen.getByRole("button", { name: "Run" }));
+      expect(await screen.findByText(/This statement can modify data/)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(executeSql).not.toHaveBeenCalled();
+
+      await user.click(screen.getByRole("button", { name: "Run" }));
+      await user.click(await screen.findByRole("button", { name: "Run statement" }));
+      await waitFor(() => expect(executeSql).toHaveBeenCalledWith({ datasource: "primary", sql: "DELETE FROM users WHERE id = 1", confirmWrite: true }));
+      expect(await screen.findByText("Statement executed")).toBeInTheDocument();
+      expect(screen.getByText(/1 row affected/)).toBeInTheDocument();
     });
 
-    it("titles the document from the route", () => {
-      expect(dashboard.documentTitle?.(match("/database", {}))).toBe("Database");
-      expect(dashboard.documentTitle?.(match("/database/primary", { datasource: "primary" }))).toBe("primary · Database");
-      expect(dashboard.documentTitle?.(match("/database/primary/users", { datasource: "primary", table: "users" }))).toBe("users · Database");
+    it("shows the server's refusal for a write on a read-only datasource without asking", async () => {
+      const user = userEvent.setup();
+      executeSql.mockImplementation(async () => ({ status: "writeRefused", message: "The datasource 'reports' is read-only" }));
+      await openQuery(user, "reports");
+
+      await typeSql(user, "DROP TABLE users");
+      await user.click(screen.getByRole("button", { name: "Run" }));
+
+      expect(await screen.findByTestId("query-write-refused")).toHaveTextContent("read-only");
+      expect(executeSql).toHaveBeenCalledWith({ datasource: "reports", sql: "DROP TABLE users" });
     });
-  });
-});
 
-describe("Database query and schema views", () => {
-  const match = (pathname: string, params: Record<string, string | undefined>) => ({ pathname, params, searchParams: new URLSearchParams() });
+    it("shows SQL errors and records the run in the history", async () => {
+      const user = userEvent.setup();
+      executeSql.mockImplementation(async () => ({ status: "error", error: "no such table: nope", elapsedMs: 3 }));
+      await openQuery(user, "primary");
 
-  beforeEach(() => {
-    localStorage.clear();
-    resetDatabaseStore();
-    executeSql.mockClear();
-    executeSql.mockImplementation(async () => executeSqlSuccess);
-    state.datasources = [
-      { name: "primary", scheme: "mysql", allowWrites: true, status: "ready" },
-      { name: "reports", scheme: "mysql", allowWrites: false, status: "ready" },
-    ];
-  });
+      await typeSql(user, "SELECT * FROM nope");
+      await user.click(screen.getByRole("button", { name: "Run" }));
 
-  async function typeSql(user: ReturnType<typeof userEvent.setup>, sql: string) {
-    const editor = await screen.findByRole("textbox", { name: "SQL editor" });
-    await user.clear(editor);
-    await user.type(editor, sql);
-    return editor;
-  }
+      expect(await screen.findByText("Query failed")).toBeInTheDocument();
+      expect(screen.getAllByText(/no such table: nope/).length).toBeGreaterThan(0);
 
-  it("runs a read and shows rows, row count and elapsed time", async () => {
-    const user = userEvent.setup();
-    renderDatabaseView("database-query", { datasource: "primary" });
+      await user.click(screen.getByRole("button", { name: "Show query history" }));
+      const entries = screen.getAllByTestId("query-history-entry");
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toHaveTextContent("SELECT * FROM nope");
+    });
 
-    await typeSql(user, "SELECT * FROM users");
-    await user.click(screen.getByRole("button", { name: "Run" }));
+    it("re-runs a statement from the history", async () => {
+      const user = userEvent.setup();
+      await openQuery(user, "primary");
 
-    expect(executeSql).toHaveBeenCalledWith({ datasource: "primary", sql: "SELECT * FROM users" });
-    expect(await screen.findByText("grace@example.com")).toBeInTheDocument();
-    const summary = screen.getByTestId("query-summary");
-    expect(summary).toHaveTextContent("2 rows");
-    expect(summary).toHaveTextContent("12 ms");
-    // No confirmation for a read.
-    expect(screen.queryByRole("button", { name: "Run statement" })).toBeNull();
-  });
+      await typeSql(user, "SELECT 1");
+      await user.click(screen.getByRole("button", { name: "Run" }));
+      await waitFor(() => expect(executeSql).toHaveBeenCalledTimes(1));
+      await typeSql(user, "SELECT 2");
 
-  it("runs on Ctrl+Enter from the editor", async () => {
-    const user = userEvent.setup();
-    renderDatabaseView("database-query", { datasource: "primary" });
+      await user.click(screen.getByRole("button", { name: "Show query history" }));
+      await user.click(within(screen.getByTestId("query-history-entry")).getByRole("button", { name: "Run again" }));
 
-    const editor = await typeSql(user, "SELECT 1");
-    editor.focus();
-    await user.keyboard("{Control>}{Enter}{/Control}");
+      await waitFor(() => expect(executeSql).toHaveBeenCalledTimes(2));
+      expect(executeSql).toHaveBeenLastCalledWith({ datasource: "primary", sql: "SELECT 1" });
+      expect(await screen.findByRole("textbox", { name: "SQL editor" })).toHaveValue("SELECT 1");
+    });
 
-    await waitFor(() => expect(executeSql).toHaveBeenCalledTimes(1));
-    expect(executeSql).toHaveBeenCalledWith({ datasource: "primary", sql: "SELECT 1" });
-  });
+    it("lists a table's columns with its primary key", async () => {
+      const user = userEvent.setup();
+      renderApp("/database/primary/users");
+      await user.click((await screen.findAllByRole("button", { name: "Columns of users" }))[0]!);
 
-  it("asks before a statement that can modify data and sends the confirmation", async () => {
-    const user = userEvent.setup();
-    executeSql.mockImplementation(async () => ({ ...executeSqlSuccess, rows: [], fields: [], rowCount: 0, affectedRows: 1, readOnly: false }));
-    renderDatabaseView("database-query", { datasource: "primary" });
+      const rows = await screen.findAllByTestId("schema-column");
+      expect(rows).toHaveLength(2);
+      expect(rows[0]).toHaveTextContent("id");
+      expect(within(rows[0]!).getByLabelText("Primary key")).toBeInTheDocument();
+      expect(within(rows[1]!).queryByLabelText("Primary key")).toBeNull();
+      expect(screen.getByText("Primary key:")).toBeInTheDocument();
+    });
 
-    await typeSql(user, "DELETE FROM users WHERE id = 1");
-    await user.click(screen.getByRole("button", { name: "Run" }));
-    expect(await screen.findByText(/This statement can modify data/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(executeSql).not.toHaveBeenCalled();
+    it("shows a datasource's DDL and links each table to its columns", async () => {
+      const user = userEvent.setup();
+      renderApp();
+      await user.click(await screen.findByRole("button", { name: "Schema of primary" }));
 
-    await user.click(screen.getByRole("button", { name: "Run" }));
-    await user.click(await screen.findByRole("button", { name: "Run statement" }));
-    await waitFor(() => expect(executeSql).toHaveBeenCalledWith({ datasource: "primary", sql: "DELETE FROM users WHERE id = 1", confirmWrite: true }));
-    expect(await screen.findByText("Statement executed")).toBeInTheDocument();
-    expect(screen.getByText(/1 row affected/)).toBeInTheDocument();
-  });
+      expect(await screen.findAllByTestId("schema-table")).toHaveLength(2);
+      expect(screen.getByText("CREATE TABLE users (id INT PRIMARY KEY)")).toBeInTheDocument();
 
-  it("shows the server's refusal for a write on a read-only datasource without asking", async () => {
-    const user = userEvent.setup();
-    executeSql.mockImplementation(async () => ({ status: "writeRefused", message: "The datasource 'reports' is read-only" }));
-    renderDatabaseView("database-query", { datasource: "reports" });
-
-    await typeSql(user, "DROP TABLE users");
-    await user.click(screen.getByRole("button", { name: "Run" }));
-
-    expect(await screen.findByTestId("query-write-refused")).toHaveTextContent("read-only");
-    expect(executeSql).toHaveBeenCalledWith({ datasource: "reports", sql: "DROP TABLE users" });
-  });
-
-  it("shows SQL errors and records the run in the history", async () => {
-    const user = userEvent.setup();
-    executeSql.mockImplementation(async () => ({ status: "error", error: "no such table: nope", elapsedMs: 3 }));
-    renderDatabaseView("database-query", { datasource: "primary" });
-
-    await typeSql(user, "SELECT * FROM nope");
-    await user.click(screen.getByRole("button", { name: "Run" }));
-
-    expect(await screen.findByText("Query failed")).toBeInTheDocument();
-    expect(screen.getAllByText(/no such table: nope/).length).toBeGreaterThan(0);
-
-    await user.click(screen.getByRole("button", { name: "Show query history" }));
-    const entries = screen.getAllByTestId("query-history-entry");
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toHaveTextContent("SELECT * FROM nope");
-  });
-
-  it("re-runs a statement from the history", async () => {
-    const user = userEvent.setup();
-    renderDatabaseView("database-query", { datasource: "primary" });
-
-    await typeSql(user, "SELECT 1");
-    await user.click(screen.getByRole("button", { name: "Run" }));
-    await waitFor(() => expect(executeSql).toHaveBeenCalledTimes(1));
-    await typeSql(user, "SELECT 2");
-
-    await user.click(screen.getByRole("button", { name: "Show query history" }));
-    await user.click(within(screen.getByTestId("query-history-entry")).getByRole("button", { name: "Run again" }));
-
-    await waitFor(() => expect(executeSql).toHaveBeenCalledTimes(2));
-    expect(executeSql).toHaveBeenLastCalledWith({ datasource: "primary", sql: "SELECT 1" });
-    expect(await screen.findByRole("textbox", { name: "SQL editor" })).toHaveValue("SELECT 1");
-  });
-
-  it("lists a table's columns with its primary key", async () => {
-    renderDatabaseView("database-schema", { datasource: "primary", table: "users" });
-
-    const rows = await screen.findAllByTestId("schema-column");
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toHaveTextContent("id");
-    expect(within(rows[0]!).getByLabelText("Primary key")).toBeInTheDocument();
-    expect(within(rows[1]!).queryByLabelText("Primary key")).toBeNull();
-    expect(screen.getByText("Primary key:")).toBeInTheDocument();
-  });
-
-  it("shows a datasource's DDL and links each table to its columns", async () => {
-    const user = userEvent.setup();
-    const { api } = renderDatabaseView("database-schema", { datasource: "primary" });
-
-    expect(await screen.findAllByTestId("schema-table")).toHaveLength(2);
-    expect(screen.getByText("CREATE TABLE users (id INT PRIMARY KEY)")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Columns of orders" }));
-    expect(api.opened).toEqual([expect.objectContaining({ viewId: "database-schema", params: { datasource: "primary", table: "orders" } })]);
-  });
-
-  it("opens the query editor and table columns from the tree", async () => {
-    const user = userEvent.setup();
-    const { api } = renderDatabaseView("datasource-tree");
-
-    await user.click(await screen.findByRole("button", { name: "Query primary" }));
-    await user.click(screen.getByRole("button", { name: "Columns of users" }));
-
-    expect(api.opened.map(entry => [entry.viewId, entry.params])).toEqual([
-      ["database-query", { datasource: "primary" }],
-      ["database-schema", { datasource: "primary", table: "users" }],
-    ]);
-  });
-
-  it("points the URL at the datasource of an active query or schema panel", () => {
-    const current = match("/database/primary/users", { datasource: "primary", table: "users" });
-    const path = (viewId: string, params: ViewParams) => dashboard.pathForActivePanel?.({ panelId: viewId, viewId, params }, current);
-    expect(path("database-query", { datasource: "reports" })).toBe("/database/reports");
-    expect(path("database-schema", { datasource: "reports", table: "orders" })).toBe("/database/reports");
+      await user.click(screen.getByRole("button", { name: "Columns of orders" }));
+      await waitFor(() => expect(tab("orders columns")).toBeInTheDocument());
+    });
   });
 });
 
 describe("Database row editing", () => {
-  beforeEach(() => {
-    localStorage.clear();
-    resetDatabaseStore();
-    mutateRow.mockClear();
-    mutateRow.mockImplementation(async () => ({ status: "success", affectedRows: 1 }));
-    state.rowsError = undefined;
-    state.datasources = [
-      { name: "primary", scheme: "mysql", allowWrites: true, status: "ready" },
-      { name: "reports", scheme: "mysql", allowWrites: false, status: "ready" },
-    ];
-  });
+  beforeEach(resetState);
 
-  const openTable = (datasource = "primary") => renderDatabaseView("database-table", { datasource, table: "users" }, `/database/${datasource}/users`);
+  const openTable = (datasource = "primary") => renderApp(`/database/${datasource}/users`);
 
   it("updates only the changed fields of a row, keyed by its primary key", async () => {
     const user = userEvent.setup();

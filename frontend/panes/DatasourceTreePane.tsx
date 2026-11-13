@@ -1,3 +1,6 @@
+import { formatTableRef } from "@tokenring-ai/database/util/tableRef";
+import { useAttachedAgentChat } from "@tokenring-ai/one-frontend/apps/chat/useAttachedAgentChat.ts";
+import { useRouteParamsFor } from "@tokenring-ai/one-frontend/apps/panelHooks.ts";
 import AgentSessionList from "@tokenring-ai/one-frontend/components/AgentSessionList.tsx";
 import NavigationSidebarHeader from "@tokenring-ai/one-frontend/components/layout/NavigationSidebarHeader.tsx";
 import ErrorState from "@tokenring-ai/one-frontend/components/ui/ErrorState.tsx";
@@ -5,21 +8,20 @@ import ListItemWithActions from "@tokenring-ai/one-frontend/components/ui/ListIt
 import LoadingState from "@tokenring-ai/one-frontend/components/ui/LoadingState.tsx";
 import SearchInput from "@tokenring-ai/one-frontend/components/ui/SearchInput.tsx";
 import ViewShell from "@tokenring-ai/one-frontend/components/ui/ViewShell.tsx";
-import { usePanel } from "@tokenring-ai/one-frontend/dock/PanelContext.tsx";
-import { useAgentChatPanel } from "@tokenring-ai/one-frontend/dock/useAgentChatPanel.ts";
 import { useAppAgentSession } from "@tokenring-ai/one-frontend/hooks/useAppAgentSession.tsx";
 import { useSearchFilter } from "@tokenring-ai/one-frontend/hooks/useSearchFilter.ts";
 import { cn } from "@tokenring-ai/one-frontend/lib/utils.ts";
 import { useDatabaseConfiguration, useDatabaseTables } from "@tokenring-ai/one-frontend/rpc.ts";
 import { AlertTriangle, ChevronRight, Columns3, Database, Eye, FileCode2, Lock, Pencil, Plus, RefreshCw, SquareTerminal, Table2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import DatasourceFormModal from "../features/database/components/DatasourceFormModal.tsx";
 import { DATABASE_AGENT_TYPE } from "../features/database/constants.ts";
 import type { DatasourceSummary } from "../features/database/types.ts";
-import { syncAgentDatabaseState, useDatabaseNavigation } from "../lib/databaseShared.tsx";
+import { DATABASE_QUERY_VIEW_ID, DATABASE_SCHEMA_VIEW_ID, DATABASE_START_VIEW_ID, DATABASE_TABLE_VIEW_ID } from "../ids.ts";
 import { clearDatabaseAgentRequest, setAttachedDatabaseAgent, useDatabaseAgentState } from "../lib/databaseStore.ts";
-import { DATABASE_DASHBOARD_ID } from "../manifest.ts";
+import { syncAgentDatabaseState } from "../lib/syncAgentState.ts";
+import { useDatabaseLayoutNavigation } from "../lib/useDatabaseLayoutNavigation.ts";
 
 /**
  * Agents the Database dashboard can attach to; keeps the chat panel docked
@@ -31,7 +33,7 @@ function DatabaseAgentSessions({ agentTypes, datasource, tableSelected }: { agen
     storageKey: "database",
     agentTypes,
   });
-  useAgentChatPanel({ agentId });
+  useAttachedAgentChat({ agentId });
   const { requestedAgentId } = useDatabaseAgentState();
 
   // Table panels read the attached agent from the store (they own the row selection).
@@ -71,6 +73,21 @@ function DatabaseAgentSessions({ agentTypes, datasource, tableSelected }: { agen
   );
 }
 
+/** Postgres (and postgresql) are the schemes whose provider parses `schema.table`. */
+function usesSchemaQualifiedTables(scheme: string): boolean {
+  return scheme === "postgres" || scheme === "postgresql";
+}
+
+/**
+ * Id passed through the table URL and `resolveTable`. Postgres carries schema
+ * and name, quoted so a `.` inside either is not the separator. MySQL and
+ * SQLite look the bare name up and do not parse a schema separator.
+ */
+function tableOpenId(scheme: string, table: { schema?: string; name: string }): string {
+  if (!usesSchemaQualifiedTables(scheme)) return table.name;
+  return formatTableRef(table);
+}
+
 /**
  * The Database dashboard's navigator: the configured datasources, with the open
  * one expanded in place into its tables. Tables are only fetched for the
@@ -78,11 +95,15 @@ function DatabaseAgentSessions({ agentTypes, datasource, tableSelected }: { agen
  * configured database at once. Rows open a table panel in the main area;
  * elsewhere (the home dashboard) they navigate to the Database dashboard.
  */
-export default function DatasourceTreeView() {
-  const panel = usePanel();
-  const inDatabaseDashboard = panel.dashboardId === DATABASE_DASHBOARD_ID;
-  const { datasource: routeDatasource, table: routeTable } = useParams<{ datasource?: string; table?: string }>();
-  const { openTable, openDatasource, openQuery, openSchema, closeTablesOf } = useDatabaseNavigation();
+export default function DatasourceTreePane() {
+  const tableRoute = useRouteParamsFor(DATABASE_TABLE_VIEW_ID);
+  const startRoute = useRouteParamsFor(DATABASE_START_VIEW_ID);
+  const queryRoute = useRouteParamsFor(DATABASE_QUERY_VIEW_ID);
+  const schemaRoute = useRouteParamsFor(DATABASE_SCHEMA_VIEW_ID);
+  // A query or schema tab points the URL at its datasource, so the tree follows it.
+  const routeDatasource = (tableRoute ?? startRoute ?? queryRoute ?? schemaRoute)?.datasource;
+  const routeTable = tableRoute?.table;
+  const { openTable, openDatasource, openQuery, openSchema, closeTablesOf } = useDatabaseLayoutNavigation();
 
   const configuration = useDatabaseConfiguration();
   const datasources = useMemo<DatasourceSummary[]>(() => configuration.data?.datasources ?? [], [configuration.data]);
@@ -99,7 +120,7 @@ export default function DatasourceTreeView() {
   const activeEntry = datasources.find(entry => entry.name === activeDatasource);
   // A datasource without a connection string can't be connected to; don't try.
   const activeReady = activeEntry !== undefined && activeEntry.status !== "missingSecret";
-  const activeTable = inDatabaseDashboard ? (routeTable ?? null) : null;
+  const activeTable = routeTable ?? null;
 
   const tablesQuery = useDatabaseTables(activeReady ? (activeDatasource ?? undefined) : undefined);
   const tables = useMemo(() => tablesQuery.data?.tables ?? [], [tablesQuery.data]);
@@ -145,7 +166,7 @@ export default function DatasourceTreeView() {
     (name: string) => {
       closeTablesOf(name);
       void configuration.mutate().then(() => {
-        if (routeDatasource === name) openDatasource("", { replace: true });
+        if (routeDatasource === name) openDatasource("");
       });
     },
     [closeTablesOf, configuration, openDatasource, routeDatasource],
@@ -269,34 +290,40 @@ export default function DatasourceTreeView() {
               ) : filteredTables.length === 0 ? (
                 <p className="text-xs text-muted px-3 py-4 text-center">{tableFilter ? `No tables matching "${tableFilter}"` : "No tables"}</p>
               ) : (
-                filteredTables.map(table => (
-                  <div
-                    key={`${table.schema ?? ""}.${table.name}`}
-                    className={cn("group flex items-center hover:bg-hover transition-colors", table.name === activeTable && "bg-active")}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => openTable(datasource.name, table.name)}
-                      className={cn(
-                        "flex-1 min-w-0 flex items-center gap-2 pl-8 pr-1 py-1.5 text-left cursor-pointer focus-ring",
-                        table.name === activeTable ? "text-primary font-medium" : "text-muted hover:text-primary",
-                      )}
-                      aria-current={table.name === activeTable ? "true" : undefined}
+                filteredTables.map(table => {
+                  const openId = tableOpenId(datasource.scheme, table);
+                  const showSchema = usesSchemaQualifiedTables(datasource.scheme) && table.schema !== undefined;
+                  const label = showSchema ? `${table.schema}.${table.name}` : table.name;
+                  const selected = openId === activeTable;
+                  return (
+                    <div
+                      key={`${table.schema ?? ""}.${table.name}`}
+                      className={cn("group flex items-center hover:bg-hover transition-colors", selected && "bg-active")}
                     >
-                      {table.type === "view" ? <Eye className="w-3.5 h-3.5 shrink-0" /> : <Table2 className="w-3.5 h-3.5 shrink-0" />}
-                      <span className="text-xs truncate">{table.name}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openSchema(datasource.name, table.name)}
-                      className="mr-2 p-1 shrink-0 text-muted hover:text-primary rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer focus-ring"
-                      title={`Columns of ${table.name}`}
-                      aria-label={`Columns of ${table.name}`}
-                    >
-                      <Columns3 className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))
+                      <button
+                        type="button"
+                        onClick={() => openTable(datasource.name, openId)}
+                        className={cn(
+                          "flex-1 min-w-0 flex items-center gap-2 pl-8 pr-1 py-1.5 text-left cursor-pointer focus-ring",
+                          selected ? "text-primary font-medium" : "text-muted hover:text-primary",
+                        )}
+                        aria-current={selected ? "true" : undefined}
+                      >
+                        {table.type === "view" ? <Eye className="w-3.5 h-3.5 shrink-0" /> : <Table2 className="w-3.5 h-3.5 shrink-0" />}
+                        <span className="text-xs truncate">{label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openSchema(datasource.name, openId)}
+                        className="mr-2 p-1 shrink-0 text-muted hover:text-primary rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity cursor-pointer focus-ring"
+                        title={`Columns of ${label}`}
+                        aria-label={`Columns of ${label}`}
+                      >
+                        <Columns3 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
           )}
@@ -320,11 +347,9 @@ export default function DatasourceTreeView() {
     >
       <div className="flex-1 min-h-0 overflow-y-auto">{body}</div>
 
-      {inDatabaseDashboard && (
-        <div className="shrink-0 border-t border-primary">
-          <DatabaseAgentSessions agentTypes={agentTypes} datasource={activeDatasource} tableSelected={activeTable !== null} />
-        </div>
-      )}
+      <div className="shrink-0 border-t border-primary">
+        <DatabaseAgentSessions agentTypes={agentTypes} datasource={activeDatasource} tableSelected={activeTable !== null} />
+      </div>
 
       {formMode && (
         <DatasourceFormModal
