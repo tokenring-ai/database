@@ -203,12 +203,27 @@ export default function DatabaseTablePane({ params }: ViewProps) {
   }, []);
 
   const saveRow = useCallback(
-    async (values: Record<string, CellValue>) => {
+    async (edited: Record<string, CellValue>) => {
       if (!datasource || !table || !editing) return;
+      let values = edited;
       setSaving(true);
       setSaveError(null);
       try {
         const original = editing.row;
+        if (original) {
+          // Fields edited back to what they were: MySQL counts only rows it actually changed, so
+          // sending them could report "no row matched" for a row that is right there.
+          values = Object.fromEntries(
+            Object.entries(values).filter(([name, value]) => {
+              const before = original[name];
+              return !(before === value || (before !== null && value !== null && before !== undefined && String(before) === String(value)));
+            }),
+          );
+          if (Object.keys(values).length === 0) {
+            setEditing(null);
+            return;
+          }
+        }
         const result = original
           ? await databaseRPCClient.mutateRow({ datasource, table, kind: "update", key: rowKey(original, primaryKey), values })
           : await databaseRPCClient.mutateRow({ datasource, table, kind: "insert", values });
@@ -227,6 +242,19 @@ export default function DatabaseTablePane({ params }: ViewProps) {
         setEditing(null);
         // The detail pane would show the stale values; the grid refetches.
         setDetailRow(null);
+        // A selected row is what the attached agent is told about: give it the saved values (and its
+        // new key, if the primary key itself was edited), not the ones from before the edit.
+        if (original) {
+          const oldKey = rowKeyOf(original, primaryKey);
+          setSelectedRowsByKey(previous => {
+            if (!previous.has(oldKey)) return previous;
+            const updated: Row = { ...original, ...values };
+            const next = new Map(previous);
+            next.delete(oldKey);
+            next.set(rowKeyOf(updated, primaryKey), updated);
+            return next;
+          });
+        }
         void rowsQuery.mutate();
       } catch (error) {
         setSaveError(formatError(error));

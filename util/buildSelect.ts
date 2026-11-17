@@ -1,5 +1,6 @@
 import { MAX_ROW_LIMIT } from "../schema.ts";
-import type { CellValue, ColumnDef, FilterOperator, SelectRowsRequest } from "../types.ts";
+import type { ColumnDef, FilterOperator, SelectRowsRequest } from "../types.ts";
+import { type BoundValue, bindValueFor } from "./bindValue.ts";
 
 /**
  * Turns a {@link SelectRowsRequest} into parameterized SQL.
@@ -21,10 +22,10 @@ export class InvalidSelectRequestError extends Error {
 export interface BuiltSelect {
   /** `SELECT ... FROM ... [WHERE ...] [ORDER BY ...] LIMIT … OFFSET …` */
   sql: string;
-  params: CellValue[];
+  params: BoundValue[];
   /** `SELECT COUNT(*) AS total FROM ... [WHERE ...]` — same filters, no paging. */
   countSql: string;
-  countParams: CellValue[];
+  countParams: BoundValue[];
   /** Columns actually selected, in order. */
   fields: string[];
   /** The clamped limit that ended up in the query. */
@@ -98,7 +99,7 @@ export default function buildSelect(request: SelectRowsRequest, columns: ColumnD
 
   // ─── WHERE ───
   const conditions: string[] = [];
-  const whereParams: CellValue[] = [];
+  const whereParams: BoundValue[] = [];
   // Placeholders share one counter so Postgres `$n` numbers stay continuous
   // through WHERE → LIMIT → OFFSET.
   let nextParamIndex = 0;
@@ -122,7 +123,7 @@ export default function buildSelect(request: SelectRowsRequest, columns: ColumnD
           break;
         }
         conditions.push(`${column} IN (${values.map(() => nextPlaceholder()).join(", ")})`);
-        whereParams.push(...values);
+        whereParams.push(...values.map(value => bindValueFor(known.get(filter.column), value)));
         break;
       }
       default: {
@@ -133,7 +134,7 @@ export default function buildSelect(request: SelectRowsRequest, columns: ColumnD
           throw new InvalidSelectRequestError(`Filter "${filter.column} ${filter.op}" takes a single value, not a list`);
         }
         conditions.push(`${column} ${operatorSql[filter.op]} ${nextPlaceholder()}`);
-        whereParams.push(filter.value);
+        whereParams.push(bindValueFor(known.get(filter.column), filter.value));
         break;
       }
     }

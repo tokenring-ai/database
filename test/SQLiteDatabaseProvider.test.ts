@@ -135,4 +135,25 @@ describe("SQLiteDatabaseProvider", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("keeps integers beyond 2^53 exact when they are written and filtered on", async () => {
+    const provider = open();
+    await provider.executeSql("CREATE TABLE events (id INTEGER PRIMARY KEY, counter INTEGER)");
+    await provider.executeSql("INSERT INTO events (id, counter) VALUES (9007199254740992, 1), (9007199254740993, 2)");
+
+    // As the browser now sends them: exact digit strings.
+    await provider.mutateRow({ kind: "update", table: "events", key: { id: "9007199254740993" }, values: { counter: "12345678901234567" } });
+
+    const { rows } = await provider.selectRows({ table: "events", filters: [{ column: "id", op: "eq", value: "9007199254740993" }], limit: 10, offset: 0 });
+    expect(rows).toEqual([{ id: "9007199254740993", counter: "12345678901234567" }]);
+  });
+
+  it("sees a column added with ALTER TABLE without a restart", async () => {
+    const provider = open();
+    await seed(provider);
+    expect((await provider.getTableSchema("users")).columns.map(c => c.name)).not.toContain("nickname");
+
+    await provider.executeSql("ALTER TABLE users ADD COLUMN nickname TEXT");
+    expect((await provider.getTableSchema("users")).columns.map(c => c.name)).toContain("nickname");
+  });
 });

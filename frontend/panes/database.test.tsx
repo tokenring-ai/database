@@ -639,6 +639,40 @@ describe("Database row editing", () => {
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "Edit row" })).toBeNull());
   });
 
+  it("tells the attached agent about a selected row's saved values, not its old ones", async () => {
+    const user = userEvent.setup();
+    state.agents = [{ id: "agent-1", createdAt: 1, agentType: "database", displayName: "Database Agent", description: "", idle: true, currentActivity: "" }];
+    openTable();
+
+    await user.click(await screen.findByRole("checkbox", { name: "Select row 1" }));
+    await user.click((await screen.findAllByRole("button", { name: "Row details" }))[0]!);
+    await user.click(screen.getByRole("button", { name: "Edit row" }));
+    const email = screen.getByRole("textbox", { name: "email" });
+    await user.clear(email);
+    await user.type(email, "ada@lovelace.dev");
+    await user.click(screen.getByRole("button", { name: "Save row" }));
+
+    await waitFor(() =>
+      expect(updateDatabaseState).toHaveBeenLastCalledWith(expect.objectContaining({ selectedRows: [{ ...state.rows[0], email: "ada@lovelace.dev" }] })),
+    );
+  });
+
+  it("sends nothing when a field is edited back to its old value", async () => {
+    const user = userEvent.setup();
+    openTable();
+
+    await user.click((await screen.findAllByRole("button", { name: "Row details" }))[0]!);
+    await user.click(screen.getByRole("button", { name: "Edit row" }));
+    const email = screen.getByRole("textbox", { name: "email" });
+    const before = (email as HTMLInputElement).value;
+    await user.clear(email);
+    await user.type(email, before);
+    await user.click(screen.getByRole("button", { name: "Save row" }));
+
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: "Edit row" })).toBeNull());
+    expect(mutateRow).not.toHaveBeenCalled();
+  });
+
   it("reports a row that no longer matches its key", async () => {
     const user = userEvent.setup();
     mutateRow.mockImplementation(async () => ({ status: "success", affectedRows: 0 }));

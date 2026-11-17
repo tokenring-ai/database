@@ -8,13 +8,40 @@
  */
 const readOnlyLeadingKeywords = ["select", "show", "describe", "desc", "explain", "with"];
 
-export function stripLeadingComments(sql: string): string {
+/**
+ * How one SQL dialect reads the text. They disagree in ways that matter for safety: MySQL treats `\'`
+ * inside a string as an escaped quote and `#` as a comment, Postgres and SQLite do neither, and
+ * MySQL only treats `--` as a comment when whitespace follows it. A query is judged read-only only
+ * if it reads as read-only under every combination, so text crafted to hide a write from one
+ * reading (`SELECT 'x\'; DELETE FROM t; --'`) is caught by another.
+ */
+export interface SqlLexing {
+  backslashEscapes: boolean;
+  hashComments: boolean;
+  dashCommentNeedsSpace: boolean;
+}
+
+const DEFAULT_LEXING: SqlLexing = { backslashEscapes: true, hashComments: true, dashCommentNeedsSpace: false };
+
+const ALL_LEXINGS: SqlLexing[] = [false, true].flatMap(backslashEscapes =>
+  [false, true].flatMap(hashComments => [false, true].map(dashCommentNeedsSpace => ({ backslashEscapes, hashComments, dashCommentNeedsSpace }))),
+);
+
+function startsLineComment(sql: string, i: number, lexing: SqlLexing): boolean {
+  if (sql[i] === "#") return lexing.hashComments;
+  if (sql[i] !== "-" || sql[i + 1] !== "-") return false;
+  if (!lexing.dashCommentNeedsSpace) return true;
+  const after = sql[i + 2];
+  return after === undefined || /\s/.test(after);
+}
+
+export function stripLeadingComments(sql: string, lexing: SqlLexing = DEFAULT_LEXING): string {
   let rest = sql.trim();
   let changed = true;
 
   while (changed) {
     changed = false;
-    if (rest.startsWith("--") || rest.startsWith("#")) {
+    if (startsLineComment(rest, 0, lexing)) {
       const newline = rest.indexOf("\n");
       rest = newline === -1 ? "" : rest.slice(newline + 1).trimStart();
       changed = true;
@@ -32,7 +59,7 @@ export function stripLeadingComments(sql: string): string {
  * Splits on `;` that are not inside a string, quoted identifier, comment, or
  * Postgres dollar-quote. A trailing semicolon does not produce an extra piece.
  */
-export function splitSqlStatements(sql: string): string[] {
+export function splitSqlStatements(sql: string, lexing: SqlLexing = DEFAULT_LEXING): string[] {
   const statements: string[] = [];
   let current = "";
   let i = 0;
@@ -47,7 +74,7 @@ export function splitSqlStatements(sql: string): string[] {
     const char = sql[i]!;
     const next = sql[i + 1];
 
-    if ((char === "-" && next === "-") || char === "#") {
+    if (startsLineComment(sql, i, lexing)) {
       const newline = sql.indexOf("\n", i);
       i = newline === -1 ? sql.length : newline;
       continue;
@@ -59,7 +86,7 @@ export function splitSqlStatements(sql: string): string[] {
     }
 
     if (char === "'" || char === '"' || char === "`") {
-      const closed = readQuoted(sql, i);
+      const closed = readQuoted(sql, i, lexing);
       current += sql.slice(i, closed);
       i = closed;
       continue;
@@ -88,12 +115,12 @@ export function splitSqlStatements(sql: string): string[] {
   return statements;
 }
 
-function readQuoted(sql: string, start: number): number {
+function readQuoted(sql: string, start: number, lexing: SqlLexing): number {
   const quote = sql[start]!;
   let i = start + 1;
   while (i < sql.length) {
     const char = sql[i]!;
-    if (char === "\\") {
+    if (char === "\\" && lexing.backslashEscapes) {
       i += 2;
       continue;
     }
@@ -130,13 +157,13 @@ const selectWritePattern = /\binto\b/;
  * Blanks out string literals and quoted identifiers so a keyword inside
  * `'please update me'` or `"delete"` is not mistaken for a write.
  */
-function maskQuoted(sql: string): string {
+function maskQuoted(sql: string, lexing: SqlLexing): string {
   let out = "";
   let i = 0;
   while (i < sql.length) {
     const char = sql[i]!;
     if (char === "'" || char === '"' || char === "`") {
-      const closed = readQuoted(sql, i);
+      const closed = readQuoted(sql, i, lexing);
       out += " ".repeat(closed - i);
       i = closed;
       continue;
@@ -147,8 +174,8 @@ function maskQuoted(sql: string): string {
   return out;
 }
 
-function isReadOnlyStatement(sql: string): boolean {
-  const statement = stripLeadingComments(sql).toLowerCase();
+function isReadOnlyStatement(sql: string, lexing: SqlLexing): boolean {
+  const statement = stripLeadingComments(sql, lexing).toLowerCase();
   if (statement === "") return false;
 
   const keyword = statement.match(/^[a-z]+/)?.[0];
@@ -159,17 +186,22 @@ function isReadOnlyStatement(sql: string): boolean {
   // explains (Postgres, MySQL 8), and `SELECT … INTO` creates a table (Postgres)
   // or writes a file (MySQL `INTO OUTFILE`), so those are checked the same way.
   if (keyword === "with" || keyword === "explain") {
-    return !writeKeywordPattern.test(maskQuoted(statement));
+    return !writeKeywordPattern.test(maskQuoted(statement, lexing));
   }
   if (keyword === "select") {
-    return !selectWritePattern.test(maskQuoted(statement));
+    return !selectWritePattern.test(maskQuoted(statement, lexing));
   }
 
   return true;
 }
 
-export default function isReadOnlyQuery(sql: string): boolean {
-  const statements = splitSqlStatements(sql);
+function isReadOnlyUnder(sql: string, lexing: SqlLexing): boolean {
+  const statements = splitSqlStatements(sql, lexing);
   if (statements.length === 0) return false;
-  return statements.every(isReadOnlyStatement);
+  return statements.every(statement => isReadOnlyStatement(statement, lexing));
+}
+
+/** Read-only under every dialect's reading of the text (see {@link SqlLexing}). */
+export default function isReadOnlyQuery(sql: string): boolean {
+  return ALL_LEXINGS.every(lexing => isReadOnlyUnder(sql, lexing));
 }

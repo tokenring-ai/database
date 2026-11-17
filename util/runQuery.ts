@@ -2,6 +2,7 @@ import formatError from "@tokenring-ai/utility/error/formatError";
 import { MAX_ROW_LIMIT } from "../schema.ts";
 import type { DataSource, Row } from "../types.ts";
 import isReadOnlyQuery from "./isReadOnlyQuery.ts";
+import { ReadOnlyViolationError } from "./readOnlyViolation.ts";
 
 /**
  * Runs a user-typed SQL statement for the Query view with the same safety rules
@@ -49,9 +50,10 @@ export function clampRowLimit(maxRows: number | undefined): number {
 
 export default async function runQuery(datasource: DataSource, sql: string, options: RunQueryOptions): Promise<RunQueryResult> {
   const now = options.now ?? (() => performance.now());
-  const readOnly = isReadOnlyQuery(sql);
+  const looksReadOnly = isReadOnlyQuery(sql);
 
-  if (!readOnly) {
+  /** The rules for a write: refused on a read-only datasource, and only run once confirmed. */
+  const writeBlocked = (): RunQueryResult | null => {
     if (!options.allowWrites) {
       return {
         status: "writeRefused",
@@ -64,12 +66,32 @@ export default async function runQuery(datasource: DataSource, sql: string, opti
         message: "This statement can modify data. Run it anyway?",
       };
     }
+    return null;
+  };
+
+  if (!looksReadOnly) {
+    const blocked = writeBlocked();
+    if (blocked) return blocked;
   }
+  // A statement that looks like a read runs with the database in read-only mode, unless it was
+  // already confirmed as a write on a datasource that allows writes: one that writes anyway
+  // (nextval(), a function with side effects) is then handled as a write. On a read-only datasource
+  // every statement runs read-only, whatever the request says.
+  const readOnly = looksReadOnly && !(options.confirmWrite && options.allowWrites);
 
   const limit = clampRowLimit(options.maxRows);
   const started = now();
   try {
-    const result = await datasource.executeSql(sql);
+    let result: Awaited<ReturnType<DataSource["executeSql"]>>;
+    try {
+      result = await datasource.executeSql(sql, { readOnly });
+    } catch (error) {
+      if (!(error instanceof ReadOnlyViolationError)) throw error;
+      // readOnly was true, so either writes are off or the write wasn't confirmed: this stops at a refusal or a question.
+      const blocked = writeBlocked();
+      if (blocked) return blocked;
+      throw error;
+    }
     const elapsedMs = Math.max(0, Math.round(now() - started));
     const rowCount = result.rows.length;
     return {

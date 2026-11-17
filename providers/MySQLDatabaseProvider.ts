@@ -14,6 +14,9 @@ import buildMutation from "@tokenring-ai/database/util/buildMutation";
 import buildSelect from "@tokenring-ai/database/util/buildSelect";
 import normalizeCellValue, { normalizeCount, normalizeRows } from "@tokenring-ai/database/util/normalizeCellValue";
 import { SQL } from "bun";
+import isReadOnlyQuery from "../util/isReadOnlyQuery.ts";
+import { isReadOnlyViolation, ReadOnlyViolationError } from "../util/readOnlyViolation.ts";
+import { SchemaCache } from "../util/SchemaCache.ts";
 
 export default class MySQLDatabaseProvider implements DataSource {
   private sql: SQL;
@@ -21,7 +24,7 @@ export default class MySQLDatabaseProvider implements DataSource {
    * Column metadata per table. `selectRows` needs it on every call to validate
    * identifiers, and a table's shape doesn't change under us mid-session.
    */
-  private schemaCache = new Map<string, TableSchema>();
+  private schemaCache = new SchemaCache();
 
   constructor(readonly options: DataSourceOptions) {
     this.sql = new SQL({
@@ -37,8 +40,10 @@ export default class MySQLDatabaseProvider implements DataSource {
   /**
    * Executes an SQL query on the MySQL database using Bun's built-in SQL client.
    */
-  async executeSql(sqlQuery: string): Promise<ExecuteSqlResult> {
-    const result = await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
+  async executeSql(sqlQuery: string, { readOnly = false }: { readOnly?: boolean } = {}): Promise<ExecuteSqlResult> {
+    // DDL (ALTER TABLE, DROP…) changes what the cached table schemas describe.
+    if (!isReadOnlyQuery(sqlQuery)) this.schemaCache.clear();
+    const result = readOnly ? await this.runReadOnly(sqlQuery) : await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
     const rows = normalizeRows(result);
     // `count` is the result-set size (0 for a write). The OK packet's row count
     // is `affectedRows` — the same number mutateRow reports.
@@ -49,6 +54,23 @@ export default class MySQLDatabaseProvider implements DataSource {
       fields: rows.length > 0 ? Object.keys(rows[0]!) : [],
       ...(affectedRows !== null ? { affectedRows } : {}),
     };
+  }
+
+  /** Runs a statement in a read-only transaction on a connection of its own, so the database refuses any write. */
+  private async runReadOnly(sqlQuery: string): Promise<Record<string, unknown>[]> {
+    const connection = await this.sql.reserve();
+    try {
+      await connection.unsafe("START TRANSACTION READ ONLY");
+      try {
+        return await connection.unsafe<Record<string, unknown>[]>(sqlQuery);
+      } catch (error) {
+        throw isReadOnlyViolation(error) ? new ReadOnlyViolationError(error) : error;
+      } finally {
+        await connection.unsafe("ROLLBACK").catch(() => {});
+      }
+    } finally {
+      await connection.release();
+    }
   }
 
   /**

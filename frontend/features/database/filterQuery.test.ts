@@ -75,3 +75,22 @@ describe("draftFiltersToQuery", () => {
     expect(draftFiltersToQuery([{ id: "1", column: "id", op: "in", value: "1, abc, 3" }], columns)).toEqual([{ column: "id", op: "in", value: [1, 3] }]);
   });
 });
+
+describe("coerceScalar precision", () => {
+  it("sends integers beyond 2^53 and wide decimals as their exact text", () => {
+    expect(coerceScalar("12345678901234567", "bigint")).toBe("12345678901234567");
+    expect(coerceScalar("9007199254740993", "bigint unsigned")).toBe("9007199254740993");
+    expect(coerceScalar("1234567890.123456789", "decimal(20,9)")).toBe("1234567890.123456789");
+    expect(coerceScalar("42", "bigint")).toBe(42);
+    expect(coerceScalar("3.5", "decimal(4,1)")).toBe(3.5);
+  });
+
+  it("rejects text that is not a number at all", () => {
+    expect(coerceScalar("12abc", "int")).toBeNull();
+  });
+
+  it("reads MySQL tinyint(1) booleans", () => {
+    expect(coerceScalar("true", "tinyint(1)")).toBe(true);
+    expect(coerceScalar("no", "tinyint(1)")).toBe(false);
+  });
+});

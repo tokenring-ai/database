@@ -99,3 +99,24 @@ describe("isReadOnlyQuery plain SELECT", () => {
     expect(isReadOnlyQuery("SELECT replace(name, 'a', 'b'), updated_at FROM users")).toBe(true);
   });
 });
+
+describe("isReadOnlyQuery across dialects", () => {
+  it("catches a write hidden behind a backslash that only MySQL treats as an escape", () => {
+    expect(isReadOnlyQuery("SELECT 'x\\'; DELETE FROM t; --'")).toBe(false);
+  });
+
+  it("catches a write hidden behind # that only MySQL treats as a comment", () => {
+    // In Postgres `#` is bitwise XOR, so this is two statements there.
+    expect(isReadOnlyQuery("SELECT 1 # 2; DROP TABLE users")).toBe(false);
+  });
+
+  it("catches a write after -- with no space, which MySQL does not treat as a comment", () => {
+    expect(isReadOnlyQuery("SELECT 1 --; DROP TABLE users")).toBe(false);
+  });
+
+  it("still reads ordinary queries with these characters as reads", () => {
+    expect(isReadOnlyQuery("SELECT 'it''s fine' -- trailing note")).toBe(true);
+    expect(isReadOnlyQuery("SELECT 'C:\\path' AS p")).toBe(true);
+    expect(isReadOnlyQuery("SELECT 1 # 2")).toBe(true);
+  });
+});

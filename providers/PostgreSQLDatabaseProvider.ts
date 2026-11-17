@@ -15,6 +15,9 @@ import buildSelect, { dollarPlaceholder, doubleQuoteIdentifier } from "@tokenrin
 import normalizeCellValue, { normalizeCount, normalizeRows } from "@tokenring-ai/database/util/normalizeCellValue";
 import { formatTableRef, parseTableRef } from "@tokenring-ai/database/util/tableRef";
 import { SQL } from "bun";
+import isReadOnlyQuery from "../util/isReadOnlyQuery.ts";
+import { isReadOnlyViolation, ReadOnlyViolationError } from "../util/readOnlyViolation.ts";
+import { SchemaCache } from "../util/SchemaCache.ts";
 
 /** Quotes a resolved table ref. Schema and name are quoted separately so a dot inside either stays inside its identifier. */
 function quotedQualifiedTable(table: TableRef): string {
@@ -27,7 +30,7 @@ export default class PostgreSQLDatabaseProvider implements DataSource {
    * Column metadata per table key (`schema.name` or bare name). `selectRows`
    * needs it on every call to validate identifiers.
    */
-  private schemaCache = new Map<string, TableSchema>();
+  private schemaCache = new SchemaCache();
 
   constructor(readonly options: DataSourceOptions) {
     this.sql = new SQL({
@@ -40,8 +43,10 @@ export default class PostgreSQLDatabaseProvider implements DataSource {
     return this.sql.close();
   }
 
-  async executeSql(sqlQuery: string): Promise<ExecuteSqlResult> {
-    const result = await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
+  async executeSql(sqlQuery: string, { readOnly = false }: { readOnly?: boolean } = {}): Promise<ExecuteSqlResult> {
+    // DDL (ALTER TABLE, DROP…) changes what the cached table schemas describe.
+    if (!isReadOnlyQuery(sqlQuery)) this.schemaCache.clear();
+    const result = readOnly ? await this.runReadOnly(sqlQuery) : await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
     const rows = normalizeRows(result);
     const affectedRows = (result as { count?: unknown }).count;
 
@@ -50,6 +55,23 @@ export default class PostgreSQLDatabaseProvider implements DataSource {
       fields: rows.length > 0 ? Object.keys(rows[0]!) : [],
       ...(typeof affectedRows === "number" ? { affectedRows } : {}),
     };
+  }
+
+  /** Runs a statement in a read-only transaction on a connection of its own, so the database refuses any write. */
+  private async runReadOnly(sqlQuery: string): Promise<Record<string, unknown>[]> {
+    const connection = await this.sql.reserve();
+    try {
+      await connection.unsafe("BEGIN READ ONLY");
+      try {
+        return await connection.unsafe<Record<string, unknown>[]>(sqlQuery);
+      } catch (error) {
+        throw isReadOnlyViolation(error) ? new ReadOnlyViolationError(error) : error;
+      } finally {
+        await connection.unsafe("ROLLBACK").catch(() => {});
+      }
+    } finally {
+      await connection.release();
+    }
   }
 
   async showSchema(): Promise<Record<string, string>> {

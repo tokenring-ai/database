@@ -14,15 +14,20 @@ export type QueryFilter = {
  */
 export function coerceScalar(raw: string, dataType: string | undefined): string | number | boolean | null {
   const trimmed = raw.trim();
-  if (dataType && /^(bool|boolean|bit\(1\))/i.test(dataType)) {
+  // MySQL's BOOLEAN is tinyint(1).
+  if (dataType && /^(bool|boolean|bit\(1\)|tinyint\(1\))/i.test(dataType)) {
     const lower = trimmed.toLowerCase();
     if (lower === "true" || lower === "1" || lower === "yes") return true;
     if (lower === "false" || lower === "0" || lower === "no") return false;
   }
   if (dataType && isNumericType(dataType)) {
     if (trimmed === "") return raw;
+    if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(trimmed)) return null;
     const num = Number(trimmed);
-    if (Number.isNaN(num)) return null;
+    // Past 2^53 (BIGINT ids) or ~15 significant digits (wide DECIMALs) a JS number is no longer the
+    // value typed: send the exact text, which the server binds exactly.
+    const digits = trimmed.replace(/^[+-]/, "").replace(/e.*$/i, "").replace(".", "").replace(/^0+/, "");
+    if ((/^[+-]?\d+$/.test(trimmed) && !Number.isSafeInteger(num)) || digits.length > 15) return trimmed;
     return num;
   }
   return raw;

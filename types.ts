@@ -94,9 +94,11 @@ export interface RowMutationResult {
 
 export interface DataSource {
   /**
-   * Executes an SQL query.
+   * Executes an SQL query. With `readOnly`, the database itself runs it in read-only mode (a
+   * read-only transaction, or SQLite's query_only), and an attempted write throws
+   * {@link import("./util/readOnlyViolation.ts").ReadOnlyViolationError}.
    */
-  executeSql: (_sqlQuery: string) => Promise<ExecuteSqlResult>;
+  executeSql: (_sqlQuery: string, options?: { readOnly?: boolean }) => Promise<ExecuteSqlResult>;
   /**
    * Shows the schema for all tables in the database.
    */

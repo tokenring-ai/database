@@ -50,6 +50,18 @@ describe("runQuery", () => {
     expect((await provider.executeSql("SELECT COUNT(*) AS n FROM users")).rows[0]).toEqual({ n: 3 });
   });
 
+  it("runs a read-looking statement read-only on a read-only datasource even when the request confirms a write", async () => {
+    const provider = await seeded();
+    // Starts with WITH, so it looks like a read, but it deletes.
+    const result = await runQuery(provider, "WITH doomed AS (SELECT 1) DELETE FROM users", {
+      datasourceName: "main",
+      allowWrites: false,
+      confirmWrite: true,
+    });
+    expect(result.status).toBe("writeRefused");
+    expect((await provider.executeSql("SELECT COUNT(*) AS n FROM users")).rows[0]).toEqual({ n: 3 });
+  });
+
   it("asks for confirmation before a write on a writable datasource", async () => {
     const provider = await seeded();
     const unconfirmed = await runQuery(provider, "DELETE FROM users WHERE id = 1", { datasourceName: "main", allowWrites: true });

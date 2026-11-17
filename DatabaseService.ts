@@ -95,23 +95,74 @@ export default class DatabaseService implements TokenRingService {
     }
     this.missingSecret = { ...missingSecret };
 
-    await this.datasources.reconcileAgainstAsync(config, {
-      creating: (_name, datasourceConfig) => this.buildDataSource(datasourceConfig),
-      deleting: async (_name, datasource) => {
-        await datasource[Symbol.asyncDispose]();
-      },
-      updating: async (name, datasource, datasourceConfig) => {
-        if (deepEqual(this.config[name], datasourceConfig)) return datasource;
+    // An entry with an unknown scheme must not stop the rest from applying: before, it threw partway
+    // through and left every datasource on its old settings — a datasource just switched to
+    // allowWrites: false stayed writable. Such an entry keeps its previous connection (if any) and is
+    // reported after everything else has been applied.
+    const target: ResolvedDatabaseServiceConfig = {};
+    const rejected: string[] = [];
+    for (const [name, datasourceConfig] of Object.entries(config)) {
+      const scheme = schemeOf(datasourceConfig.url);
+      if (this.factories.get(scheme)) {
+        target[name] = datasourceConfig;
+      } else {
+        rejected.push(`database scheme ${scheme} (datasource "${name}")`);
+        const previous = this.config[name];
+        if (previous) target[name] = previous;
+      }
+    }
 
-        // Build first: a throw here then leaves the existing connection in place
-        // rather than parking an already-disposed one in the registry.
-        const replacement = this.buildDataSource(datasourceConfig);
-        await datasource[Symbol.asyncDispose]();
-        return replacement;
-      },
-    });
+    // The settings each live datasource was actually built with, so the write guard never reads
+    // settings that did not take effect.
+    const applied = new Map<string, ResolvedDatabaseConfiguration>();
+    try {
+      await this.datasources.reconcileAgainstAsync(target, {
+        creating: (name, datasourceConfig) => {
+          const created = this.buildDataSource(datasourceConfig);
+          applied.set(name, datasourceConfig);
+          return created;
+        },
+        deleting: async (_name, datasource) => {
+          await datasource[Symbol.asyncDispose]();
+        },
+        updating: async (name, datasource, datasourceConfig) => {
+          if (deepEqual(this.config[name], datasourceConfig)) {
+            applied.set(name, datasourceConfig);
+            return datasource;
+          }
 
-    this.config = config;
+          // Build first: a throw here then leaves the existing connection in place
+          // rather than parking an already-disposed one in the registry.
+          const replacement = this.buildDataSource(datasourceConfig);
+          await datasource[Symbol.asyncDispose]();
+          applied.set(name, datasourceConfig);
+          return replacement;
+        },
+      });
+    } finally {
+      const next: ResolvedDatabaseServiceConfig = {};
+      for (const name of this.datasources.keysArray()) {
+        const settings = applied.get(name) ?? this.config[name];
+        if (settings) next[name] = settings;
+      }
+      this.config = next;
+    }
+
+    if (rejected.length > 0) {
+      throw new Error(
+        `No provider registered for ${rejected.join(", ")}. Registered schemes: ${this.factories.keysArray().join(", ") || "(none)"}. The other datasources were applied.`,
+      );
+    }
+  }
+
+  /** Shutdown: disposes every datasource (closing its connection pool). One failing dispose does not skip the rest. */
+  async stop(): Promise<void> {
+    const entries = this.datasources.entriesArray();
+    for (const [name] of entries) this.datasources.unregister(name);
+    this.config = {};
+    const results = await Promise.allSettled(entries.map(async ([, datasource]) => datasource[Symbol.asyncDispose]()));
+    const errors = results.flatMap(result => (result.status === "rejected" ? [result.reason as unknown] : []));
+    if (errors.length > 0) throw new AggregateError(errors, `Failed to dispose ${errors.length} datasource(s)`);
   }
 
   // ─── Agent state ────────────────────────────────────────────────────────────

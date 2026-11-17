@@ -1,4 +1,5 @@
 import type { CellValue, ColumnDef, RowMutation, TableSchema } from "../types.ts";
+import { type BoundValue, bindValueFor } from "./bindValue.ts";
 import type { BuildSelectOptions } from "./buildSelect.ts";
 
 /**
@@ -20,7 +21,7 @@ export class InvalidMutationError extends Error {
 
 export interface BuiltMutation {
   sql: string;
-  params: CellValue[];
+  params: BoundValue[];
 }
 
 export type BuildMutationOptions = Pick<BuildSelectOptions, "quoteIdentifier" | "quoteTable" | "parameterPlaceholder">;
@@ -54,9 +55,9 @@ export default function buildMutation(mutation: RowMutation, schema: TableSchema
   };
 
   let index = 0;
-  const params: CellValue[] = [];
-  const bind = (value: CellValue): string => {
-    params.push(value);
+  const params: BoundValue[] = [];
+  const bind = (value: CellValue, column?: ColumnDef): string => {
+    params.push(bindValueFor(column, value));
     return placeholder(index++);
   };
 
@@ -89,7 +90,7 @@ export default function buildMutation(mutation: RowMutation, schema: TableSchema
         }
         const value = key![name];
         if (value === null || value === undefined) throw new InvalidMutationError(`Primary key column "${name}" has no value`);
-        return `${quote(name)} = ${bind(value)}`;
+        return `${quote(name)} = ${bind(value, column)}`;
       })
       .join(" AND ");
   };
@@ -98,12 +99,12 @@ export default function buildMutation(mutation: RowMutation, schema: TableSchema
     case "insert": {
       const entries = valueEntries(mutation.values);
       const columns = entries.map(([name]) => quote(name)).join(", ");
-      const placeholders = entries.map(([, value]) => bind(value)).join(", ");
+      const placeholders = entries.map(([name, value]) => bind(value, known.get(name))).join(", ");
       return { sql: `INSERT INTO ${table} (${columns}) VALUES (${placeholders})`, params };
     }
     case "update": {
       const entries = valueEntries(mutation.values);
-      const assignments = entries.map(([name, value]) => `${quote(name)} = ${bind(value)}`).join(", ");
+      const assignments = entries.map(([name, value]) => `${quote(name)} = ${bind(value, known.get(name))}`).join(", ");
       // SET placeholders come first, so the key's numbering continues after them.
       return { sql: `UPDATE ${table} SET ${assignments} WHERE ${whereKey(mutation.key)}`, params };
     }

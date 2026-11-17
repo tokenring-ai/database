@@ -14,6 +14,9 @@ import buildMutation from "@tokenring-ai/database/util/buildMutation";
 import buildSelect, { doubleQuoteIdentifier } from "@tokenring-ai/database/util/buildSelect";
 import normalizeCellValue, { normalizeCount, normalizeRows } from "@tokenring-ai/database/util/normalizeCellValue";
 import { SQL } from "bun";
+import isReadOnlyQuery from "../util/isReadOnlyQuery.ts";
+import { isReadOnlyViolation, ReadOnlyViolationError } from "../util/readOnlyViolation.ts";
+import { SchemaCache } from "../util/SchemaCache.ts";
 
 /**
  * Maps a connection string to a path Bun's SQLite adapter understands.
@@ -87,12 +90,15 @@ export function sqliteFilenameFromUrl(url: string): string {
 
 export default class SQLiteDatabaseProvider implements DataSource {
   private sql: SQL;
-  private schemaCache = new Map<string, TableSchema>();
+  private schemaCache = new SchemaCache();
 
   constructor(readonly options: DataSourceOptions) {
     this.sql = new SQL({
       adapter: "sqlite",
       filename: sqliteFilenameFromUrl(options.url),
+      // Integers come back as bigint so values past 2^53 stay exact; normalizeCellValue turns
+      // safe ones back into numbers and the rest into digit strings.
+      safeIntegers: true,
     });
   }
 
@@ -100,8 +106,32 @@ export default class SQLiteDatabaseProvider implements DataSource {
     return this.sql.close();
   }
 
-  async executeSql(sqlQuery: string): Promise<ExecuteSqlResult> {
-    const result = await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
+  /**
+   * SQLite has one connection, and query_only applies to all of it: statements run one at a time,
+   * so no other statement runs while it is switched on (or slips past while it is off).
+   */
+  private queue: Promise<unknown> = Promise.resolve();
+
+  private serialized<T>(run: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(run, run);
+    this.queue = next.catch(() => {});
+    return next;
+  }
+
+  async executeSql(sqlQuery: string, { readOnly = false }: { readOnly?: boolean } = {}): Promise<ExecuteSqlResult> {
+    // DDL (ALTER TABLE, DROP…) changes what the cached table schemas describe.
+    if (!isReadOnlyQuery(sqlQuery)) this.schemaCache.clear();
+    const result = await this.serialized(async () => {
+      if (!readOnly) return this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
+      await this.sql.unsafe("PRAGMA query_only = ON");
+      try {
+        return await this.sql.unsafe<Record<string, unknown>[]>(sqlQuery);
+      } catch (error) {
+        throw isReadOnlyViolation(error) ? new ReadOnlyViolationError(error) : error;
+      } finally {
+        await this.sql.unsafe("PRAGMA query_only = OFF");
+      }
+    });
     const rows = normalizeRows(result);
     const affectedRows = (result as { count?: unknown }).count;
 

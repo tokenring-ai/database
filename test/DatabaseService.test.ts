@@ -106,6 +106,19 @@ describe("DatabaseService.reconfigure", () => {
     expect(service.getDataSource("main")).toBe(created[0] as unknown as DataSource);
   });
 
+  it("still applies the other datasources' settings when one has an unknown scheme", async () => {
+    const { service } = serviceWithStubFactory();
+    await service.reconfigure({ prod: { url: "mysql://host/prod", allowWrites: true } });
+
+    // prod is locked down in the same save that adds an entry nothing can open.
+    await expect(
+      service.reconfigure({ bad: { url: "mssql://host/db", allowWrites: true }, prod: { url: "mysql://host/prod", allowWrites: false } }),
+    ).rejects.toThrow(/mssql.*"bad".*other datasources were applied/);
+
+    expect(service.getDataSourceConfig("prod")?.allowWrites).toBe(false);
+    expect(service.getDatasourceNames()).toEqual(["prod"]);
+  });
+
   it("disposes a datasource that was removed from config", async () => {
     const { service, created } = serviceWithStubFactory();
     await service.reconfigure({ main: { url: "mysql://host/db", allowWrites: false } });
@@ -144,5 +157,35 @@ describe("DatabaseService.reconfigure", () => {
     expect(service.getDataSourceConfig("ro")?.allowWrites).toBe(false);
     expect(service.getDataSourceConfig("rw")?.allowWrites).toBe(true);
     expect(service.getDataSourceConfig("missing")).toBeUndefined();
+  });
+});
+
+describe("DatabaseService.stop", () => {
+  it("disposes every datasource and clears the registry", async () => {
+    const { service, created } = serviceWithStubFactory();
+    await service.reconfigure({
+      a: { url: "mysql://host/a", allowWrites: false },
+      b: { url: "mysql://host/b", allowWrites: true },
+    });
+
+    await service.stop();
+
+    expect(created.map(stub => stub.disposed)).toEqual([true, true]);
+    expect(service.getDatasourceNames()).toEqual([]);
+    expect(service.getDataSourceConfig("a")).toBeUndefined();
+  });
+
+  it("still disposes the others when one dispose fails, then reports the failure", async () => {
+    const { service, created } = serviceWithStubFactory();
+    await service.reconfigure({
+      a: { url: "mysql://host/a", allowWrites: false },
+      b: { url: "mysql://host/b", allowWrites: false },
+    });
+    created[0]![Symbol.asyncDispose] = async () => {
+      throw new Error("pool close failed");
+    };
+
+    await expect(service.stop()).rejects.toThrow(/Failed to dispose 1 datasource/);
+    expect(created[1]!.disposed).toBe(true);
   });
 });

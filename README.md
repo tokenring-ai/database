@@ -90,6 +90,10 @@ z.object({
 2. Checks whether the query is read-only using `isReadOnlyQuery` (handles
    `SELECT`, `SHOW`, `DESCRIBE`, `DESC`, `EXPLAIN`, `WITH`, with comment
    stripping and CTE write-detection).
+   A statement that passes runs with the database in read-only mode (`readOnly: true`): Postgres `BEGIN READ ONLY`
+   and MySQL `START TRANSACTION READ ONLY` on a reserved connection, rolled back afterwards; SQLite `PRAGMA query_only`.
+   If the database refuses a write anyway (a `ReadOnlyViolationError`, e.g. `SELECT nextval('seq')`), the statement is
+   treated as a write and step 3 applies.
 3. If the query is not read-only:
    - If `allowWrites` is `false` for the datasource, returns a failure
      explaining that the datasource is read-only.
@@ -379,7 +383,7 @@ all methods:
 
 ```typescript
 interface DataSource {
-  executeSql(sqlQuery: string): Promise<ExecuteSqlResult>;
+  executeSql(sqlQuery: string, options?: { readOnly?: boolean }): Promise<ExecuteSqlResult>;
   showSchema(): Promise<Record<string, string>>;
   listTables(): Promise<TableRef[]>;
   getTableSchema(table: string): Promise<TableSchema>;
@@ -465,8 +469,9 @@ before these checks.
 
 This is the single read/write classifier for both the `database_executeSql`
 tool and the Query panel (`executeSql` RPC). It cannot see side effects of
-functions called from a `SELECT` (e.g. `SELECT pg_terminate_backend(…)`);
-`allowWrites: false` plus database-level permissions remain the real boundary.
+functions called from a `SELECT` (e.g. `nextval()`). Such a read runs in read-only mode (see `runQuery`), so the database
+refuses the write and the statement is then treated as a write. Side effects that read-only mode does not stop (e.g.
+`SELECT pg_terminate_backend(…)`) are still outside the check, so `allowWrites: false` plus database-level permissions remain the real boundary.
 
 Also exports `stripLeadingComments(sql: string): string`.
 
@@ -484,7 +489,8 @@ Runs a user-typed statement for the `executeSql` RPC with the same rules as the
 unless `confirmWrite` is set. Returned rows are capped at `maxRows`
 (≤ `MAX_ROW_LIMIT`, 1000); `rowCount` and `truncated` report the full count.
 The cap is applied after the driver returns, so a huge result is still read
-into server memory once. SQL errors come back as `{ status: "error" }`.
+into server memory once. SQL errors come back as `{ status: "error" }`. Reads run in read-only mode; a read that writes anyway is handled
+as a write (`confirmationRequired`, or `writeRefused` on a read-only datasource).
 
 #### buildMutation
 
